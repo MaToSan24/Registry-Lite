@@ -1,0 +1,73 @@
+{
+  "name": "governify-registry",
+  "buildOn": "2018-04-18",
+  "version": "3.6.0",
+  "description": "Central repository for agreements",
+  "homepage": "https://github.com/isa-group/governify-registry",
+  "main": "index.js",
+  "keywords": [
+    "governify",
+    "registry",
+    "agreements"
+  ],
+  "license": "GPL-2.0",
+  "private": true,
+  "dependencies": {
+    "JSONStream": "^1.3.5",
+    "ajv": "^6.4.0",
+    "bluebird": "^3.5.1",
+    "body-parser": "^1.18.2",
+    "compression": "^1.7.2",
+    "cors": "^2.8.4",
+    "deep-diff": "^0.3.8",
+    "elastic-apm-node": "^3.14.0",
+    "express": "^4.16.3",
+    "governify-commons": "^1.17.6-1",
+    "helmet": "^3.12.0",
+    "js-yaml": "^3.11.0",
+    "json-schema-ref-parser": "^5.0.3",
+    "moment-timezone": "^0.5.33",
+    "mongoose": "^5.12.6",
+    "oas-tools": "^2.1.8",
+    "rrule": "^2.6.8",
+    "swagger-tools": "^0.10.3"
+  },
+  "devDependencies": {
+    "mocha": "^7.1.1",
+    "nyc": "^15.0.0",
+    "semistandard": "^14.2.0"
+  },
+  "semistandard": {
+    "ignore": [
+      "/tests/**"
+    ]
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "mocha ./tests/test.js --timeout 20000 -s 20",
+    "coverage": "nyc --reporter=lcov mocha ./tests/test.js --timeout 20000 -s 20",
+    "lint": "semistandard",
+    "lint-fix": "semistandard --fix",
+    "precommit": "semistandard --fix && nyc mocha ./tests/test.js --timeout 20000 -s 5",
+    "old_dev": "concurrently --kill-others \"yarn run start\" \"grunt watch\"",
+    "old_watch": "grunt watch",
+    "old_test": "grunt test",
+    "old_coverage": "grunt coverage",
+    "old_build": "grunt build",
+    "old_release:patch": "grunt release",
+    "old_release:minor": "grunt release:minor",
+    "old_release:major": "grunt release:major",
+    "old_deliver": "grunt deliver"
+  },
+  "author": {
+    "name": "ISA group",
+    "web": "http://www.isa.us.es/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/governify/registry"
+  },
+  "docker": {
+    "url": "https://hub.docker.com/r/governify/registry"
+  }
+}

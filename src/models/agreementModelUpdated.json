@@ -1,0 +1,162 @@
+{
+    "id": {
+        "type": "string"
+    },
+    "version": {
+        "type": "string"
+    },
+    "type": {
+        "type": "string"
+    },
+    "context": {
+        "type": "object",
+        "properties": {
+            "validity": {
+                "type": "object",
+                "properties": {
+                    "initial": {
+                        "type": "string"
+                    },
+                    "timeZone": {
+                        "type": "string"
+                    },
+                    "end": {
+                        "type": "string"
+                    }
+                }
+            },
+            "definitions": {
+                "type": "object",
+                "properties": {
+                    "scopes": {
+                        "type": "object",
+                        "patternProperties": {
+                            "^[a-zA-Z0-9]*$": {}
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "terms": {
+        "type": "object",
+        "properties": {
+            "metrics": {
+                "type": "object",
+                "patternProperties": {
+                    "^[a-zA-Z0-9]*$": {
+                        "type": "object",
+                        "properties": {
+                            "collector": {
+                                "type": "object",
+                                "properties": {
+                                    "infrastructurePath": {
+                                        "type": "string"
+                                    },
+                                    "endpoint": {
+                                        "type": "string"
+                                    },
+                                    "type": {
+                                        "type": "string"
+                                    },
+                                    "config": {
+                                        "type": "object",
+                                        "properties": {
+                                            "scopeManager": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "measure": {
+                                "computing": {
+                                    "type": "string"
+                                },
+                                "element": {
+                                    "oneOf": [
+                                        {
+                                            "type": "string"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "patternProperties": {
+                                                "^[a-zA-Z0-9]*$": {}
+                                            }
+                                        }
+                                    ]
+                                },
+                                "event": {
+                                    "type": "object",
+                                    "patternProperties": {
+                                        "^[a-zA-Z0-9]*$": {}
+                                    }
+                                },
+                                "scope": {
+                                    "type": "object",
+                                    "patternProperties": {
+                                        "^[a-zA-Z0-9]*$": {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "guarantees": {
+                "type": "array",
+                "items": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "scope": {
+                        "type": "object",
+                        "patternProperties": {
+                            "^[a-zA-Z0-9]*$": {}
+                        }
+                    },
+                    "of": {
+                        "type": "object",
+                        "properties": {
+                            "scope": {
+                                "type": "object",
+                                "patternProperties": {
+                                    "^[a-zA-Z0-9]*$": {}
+                                }
+                            },
+                            "objective": {
+                                "type": "string"
+                            },
+                            "with": {
+                                "type": "object",
+                                "patternProperties": {
+                                    "^[a-zA-Z0-9]*$": {}
+                                }
+                            },
+                            "window": {
+                                "type": "object",
+                                "properties": {
+                                    "type": {
+                                        "type": "string"
+                                    },
+                                    "period": {
+                                        "type": "string"
+                                    },
+                                    "initial": {
+                                        "type": "string"
+                                    },
+                                    "end": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

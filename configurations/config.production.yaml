@@ -1,0 +1,50 @@
+database:
+  host: mongo_registry
+  port: 27017
+  name: registry
+email:
+  defaultMailFrom: '"ISA-Group" <no-reply@isa.us.es>'
+  mailerApiKey: this API key has been revoked. Pass it as an environment var to
+    avoid public disclosure
+  messages:
+    reloadAgreement:
+      mailContent:
+        El cálculo de SLAs para el contrato <b>%s</b> ha sido actualizado
+        en base a la información cargada en los logs. <p>Estado actual de los logs:</p>
+      mailSubject: "[Governify] Su tarea ha finalizado"
+errors:
+  progressiveTrace: false
+log:
+  file: "./logs/prod-logs.log"
+  level: error$_
+  maxFiles: 10
+  maxSize: 10000000
+telemetry:
+  enabled: false
+  server: governify-telemetry:8200
+maxAttempts: 20
+models:
+  agreement:
+    name: AgreementModel
+    path: "./src/models/agreementModel.json"
+  state:
+    name: StateModel
+    path: "./src/models/stateModel.json"
+  bills:
+    name: BillsModel
+    path: "./src/models/billsModel.json"
+parallelProcess:
+  guarantees: false
+  metrics: false
+retryDelay: 5000
+server:
+  port: 80
+  timeout: 86400000
+  bodySize: 50mb
+  bypassCORS: true
+  useHelmet: false
+  httpOptionsOK: true
+  servePackageInfo: true
+  listenOnHttps: false
+statusBouncer: false
+streaming: true

@@ -1,0 +1,51 @@
+database:
+  host: localhost
+  port: 37019
+  name: registry
+email:
+  defaultMailFrom: '"ISA-Group" <no-reply@isa.us.es>'
+  mailerApiKey: this API key has been revoked. Pass it as an environment var to
+    avoid public disclosure
+  messages:
+    reloadAgreement:
+      mailContent:
+        El cálculo de SLAs para el contrato <b>%s</b> ha sido actualizado
+        en base a la información cargada en los logs. <p>Número actual de registros
+        que se han tenido en cuenta para realizar los cálculos:</p>
+      mailSubject: "[Governify] Su tarea ha finalizado"
+errors:
+  progressiveTrace: false
+log:
+  file: "./logs/test-logs.log"
+  level: debug
+  maxFiles: 30
+  maxSize: 10000000
+telemetry:
+  enabled: false
+  server: localhost:8200
+maxAttempts: 10
+models:
+  agreement:
+    name: AgreementModel
+    path: "./src/models/agreementModel.json"
+  state:
+    name: StateModel
+    path: "./src/models/stateModel.json"
+  bills:
+    name: BillsModel
+    path: "./src/models/billsModel.json"
+parallelProcess:
+  guarantees: false
+  metrics: false
+retryDelay: 2000
+server:
+  port: 8081
+  timeout: 86400000
+  bodySize: 50mb
+  bypassCORS: true
+  useHelmet: true
+  httpOptionsOK: true
+  servePackageInfo: true
+  listenOnHttps: false
+statusBouncer: false
+streaming: true
