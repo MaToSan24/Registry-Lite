@@ -45,7 +45,7 @@ jobs:
 #        CI: true  
   e2eTest:
     name: (develop) E2E - Checkout infrastructure, install mocha and run tests (docker-compose up, mocha tests and docker-compose down)
-    needs: buildTest
+    # needs: buildTest
     runs-on: ubuntu-latest
     strategy:
       matrix:
