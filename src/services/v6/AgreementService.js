@@ -52,8 +52,8 @@ module.exports = {
   createAgreement,
   deleteAllAgreements,
   deleteAgreementById,
-  getTermsByAgreementId,
-  getGuaranteesByAgreementId
+  getGuaranteesByAgreementId,
+  getGuaranteeByAgreementIdAndGuaranteeId
 };
 
 /**
@@ -68,7 +68,7 @@ async function getAllAgreements(args, res) {
     logger.info('New request to GET agreements agreements/agreements.js');
     const agreements = await Agreement.find();
     logger.info('Agreements returned');
-    res.status(200).json(agreements);
+    res.send(agreements);
   } catch (err) {
     logger.error("Error getting all the agreements: ", err);
     res.status(500).json(new ErrorModel(500, err));
@@ -84,13 +84,12 @@ async function getAllAgreements(args, res) {
  * */
 async function getAgreementById(args, res) {
   try {
+    logger.info(`New request to GET agreement with id = ${args.agreement.value}`);
     const agreement = await Agreement.findOne({ id: args.agreement.value });
-    if (!agreement) {
-      logger.warn(`There is no agreement with id: ${args.agreement.value}`);
-      return res.status(404).json(new ErrorModel(404, `There is no agreement with id: ${args.agreement.value}`));
-    }
+    if (!agreement) return res.status(404).json(new ErrorModel(404, `There is no agreement with id: ${args.agreement.value}`));
+
     logger.info(`Agreement with id = ${args.agreement.value} returned`);
-    res.status(200).json(agreement);
+    res.send(agreement);
   } catch (err) {
     logger.error(err.toString());
     res.status(500).json(new ErrorModel(500, err));
@@ -115,7 +114,7 @@ async function createAgreement(args, res) {
     await State.create({ agreementId: schema.id, fulfilled: true, scope: {}, metrics: [], guarantees: [] });
     logger.info('State initialized successfully!');
 
-    res.sendStatus(200);
+    res.sendStatus(201);
   } catch (err) {
     logger.error("Error creating agreement: ", err);
     res.status(500).json(new ErrorModel(500, err));
@@ -135,6 +134,7 @@ async function deleteAllAgreements(args, res) {
     await Agreement.deleteMany({});
     logger.info('Deleted all agreements');
     await deleteAllAgreementsStates(args, res);
+    res.sendStatus(200);
   } catch (err) {
     res.sendStatus(404);
     logger.warn("Couldn't delete all agreements: ", err.message);
@@ -150,17 +150,17 @@ async function deleteAllAgreements(args, res) {
  * */
 async function deleteAgreementById(args, res) {
   try {
+    logger.info(`New request to DELETE agreement with id = ${args.agreement.value}`);
     const agreementId = args.agreement.value;
-    if (!agreementId) {
-      return res.status(400).send("Can't delete agreement without an ID");
-    }
+    if (!agreementId) return res.status(400).send("Cannot delete agreement without an ID");
+
     const deletedAgreement = await Agreement.findOneAndDelete({ id: agreementId });
-    if (!deletedAgreement) {
-      return res.status(404).send(`Agreement with ID ${agreementId} not found`);
-    }
-    logger.info(`Agreement with ID ${agreementId} successfully deleted`);
+    if (!deletedAgreement) return res.status(404).send(`Agreement with ID ${agreementId} not found`);
+
     args.agreements = args.agreement;
-    deleteAgreementStatesById(args, res);
+    await deleteAgreementStatesById(args, res);
+    logger.info(`Agreement with id = ${args.agreement.value} deleted`);
+    res.sendStatus(200);
   } catch (err) {
     logger.error(err.toString());
     res.status(500).json(new ErrorModel(500, err));
@@ -168,19 +168,23 @@ async function deleteAgreementById(args, res) {
 }
 
 /**
- * Get all agreement terms.
+ * Get all guarantees in an agreement by agreement ID.
  * @param {Object} args {}
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:agreement.getTermsByAgreementId
+ * @alias module:agreement.getGuaranteesByAgreementId
  * */
-async function getTermsByAgreementId(args, res) {
+async function getGuaranteesByAgreementId(args, res) {
   try {
+    logger.info(`New request to GET terms for agreement with id = ${args.agreement.value}`);
     const agreement = await Agreement.findOne({ id: args.agreement.value });
-    if (!agreement) {
-      return res.status(404).json({ message: `Agreement with id ${args.agreement.value} not found` });
-    }
-    res.json(agreement.terms.guarantees);
+    if (!agreement) return res.status(404).json({ message: `Agreement with id ${args.agreement.value} not found` });
+
+    const guarantees = agreement.terms?.guarantees;
+    if (!guarantees || guarantees.length === 0) return res.status(404).json({ message: `No guarantees found for agreement with id ${args.agreement.value}` });
+
+    logger.info(`Terms for agreement with id = ${args.agreement.value} returned`);
+    res.send(guarantees);
   } catch (err) {
     logger.error(err);
     res.sendStatus(500);
@@ -189,22 +193,22 @@ async function getTermsByAgreementId(args, res) {
 
 
 /**
- * Get all agreement guarantees.
- * @param {Object} args {agreement: String, guarantee: String}
+ * Get a specific guarantee for an agreement.
+ * @param {Object} args { agreement: String, guarantee: String }
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:agreement.getGuaranteesByAgreementId
- * */
-async function getGuaranteesByAgreementId(args, res) {
+ * @alias module:agreement.getGuaranteeByAgreementIdAndGuaranteeId
+ */
+async function getGuaranteeByAgreementIdAndGuaranteeId(args, res) {
   try {
+    logger.info(`New request to GET the guarantee with id = ${args.guarantee.value} for agreement with id = ${args.agreement.value} `);
     const agreement = await Agreement.findOne({ id: args.agreement.value });
-    if (!agreement) {
-      return res.status(404).send('Agreement not found');
-    }
-    const guarantee = agreement[0].terms.guarantees.find(guarantee => guarantee.id === args.guarantee.value);
-    if (!guarantee) {
-      return res.status(404).send('Guarantee not found');
-    }
+    if (!agreement) return res.status(404).json({ message: `Agreement with id ${args.agreement.value} not found` });
+
+    const guarantee = agreement.terms?.guarantees.find((guarantee) => guarantee.id === args.guarantee.value);
+    if (!guarantee) return res.status(404).json({ message: `Guarantee with id ${args.guarantee.value} not found` });
+
+    logger.info(`Guarantee with id = ${args.guarantee.value} for agreement with id = ${args.agreement.value} returned`);
     res.send(guarantee);
   } catch (err) {
     logger.error(err);

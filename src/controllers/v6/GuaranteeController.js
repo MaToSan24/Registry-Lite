@@ -28,21 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 const service = require('../../services/v6/GuaranteeService.js');
 
 module.exports = {
-    getGuarantees,
     getAllGuarantees,
     getGuaranteeById,
 };
-
-/**
- * getGuarantees.
- * @param {Object} req request
- * @param {Object} res response
- * @param {Object} next next function
- * @alias module:GuaranteeController.getGuarantees
- */
-function getGuarantees(req, res, next) {
-    service.getGuarantees(req.swagger.params, res, next);
-}
 
 /**
  * getAllGuarantees.

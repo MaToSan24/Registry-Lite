@@ -41,6 +41,8 @@ const utils = require('../../utils');
 const Query = utils.Query;
 const controllerErrorHandler = utils.errors.controllerErrorHandler;
 
+import State from '../../models/State.js';
+
 /**
  * Guarantees module
  * @module guarantees
@@ -58,40 +60,48 @@ module.exports = {
   getGuaranteeById,
 };
 
-// Method used internally
-function getGuarantees (agreementId, guaranteeId, query, forceUpdate) {
-  return new Promise(function (resolve, reject) {
-    stateManager({
-      id: agreementId
-    }).then(function (manager) {
-      const guaranteesQueries = [];
-      const validationErrors = [];
-      manager.agreement.terms.guarantees.forEach(function (guarantee) {
-        const queryM = buildGuaranteeQuery(guarantee.id, query.from, query.to);
+/**
+ * Method used internally. Get guarantees for a given agreement ID and guarantee ID within a specific date range.
+ * @param {string} agreementId - The ID of the agreement to get guarantees for.
+ * @param {string} guaranteeId - The ID of the guarantee to get.
+ * @param {object} dateRange - The date range to get guarantees for.
+ * @param {Date} dateRange.from - The start of the date range.
+ * @param {Date} dateRange.to - The end of the date range.
+ * @param {boolean} forceUpdate - Whether to force an update of the guarantees.
+ * @returns {Promise} A promise that resolves with the guarantees or rejects with an error.
+ */
+async function getGuarantees(agreementId, guaranteeId, dateRange, forceUpdate) {
+  try {
+    const manager = await stateManager({ id: agreementId });
+    const guaranteesQueries = [];
+    const validationErrors = [];
 
-        const validation = utils.validators.guaranteeQuery(queryM, guarantee.id, guarantee);
-        if (!validation.valid) {
-          validation.guarantee = guarantee.id;
-          validationErrors.push(validation);
-        } else {
-          guaranteesQueries.push(queryM);
-        }
-      });
-      if (validationErrors.length === 0) {
-        utils.promise.processSequentialPromises('guarantees', manager, guaranteesQueries, null, null, false, true).then(function (result) {
-          resolve(result);
-        }, function (err) {
-          reject(new ErrorModel(500, err));
-        });
+    manager.agreement.terms.guarantees.forEach((guarantee) => {
+      const queryM = buildGuaranteeQuery(guarantee.id, dateRange.from, dateRange.to);
+      const validation = utils.validators.guaranteeQuery(queryM, guarantee.id, guarantee);
+
+      if (!validation.valid) {
+        validation.guarantee = guarantee.id;
+        validationErrors.push(validation);
       } else {
-        reject(new ErrorModel(400, validationErrors));
+        guaranteesQueries.push(queryM);
       }
-    }, function (err) {
-      const errorString = 'Error while initializing state manager for agreement: ' + agreementId;
-      reject(new ErrorModel(500, errorString + ' - ' + err));
     });
-  });
+
+    if (validationErrors.length > 0) {
+      logger.error('Error while getting guarantees: ' + JSON.stringify(validationErrors));
+      throw new ErrorModel(400, validationErrors);
+    }
+
+    const result = await utils.promise.processSequentialPromises('guarantees', manager, guaranteesQueries, null, null, false, true);
+    logger.info('Guarantees obtained successfully');
+    return result;
+  } catch (err) {
+    logger.error('Error while getting guarantees for agreement: ' + agreementId + ' - ' + err);
+    throw new ErrorModel(500, `Error while initializing state manager for agreement: ${agreementId} - ${err}`);
+  }
 }
+
 
 /**
  * Get all guarantees.
@@ -100,115 +110,97 @@ function getGuarantees (agreementId, guaranteeId, query, forceUpdate) {
  * @param {Object} next next function
  * @alias module:guarantees.getAllGuarantees
  * */
-function getAllGuarantees (req, res) {
-  const agreementId = req.swagger.params.agreement.value;
-  const from = req.query.from;
-  const to = req.query.to;
-  const lastPeriod = req.query.lastPeriod ? (req.query.lastPeriod === 'true') : true;
-  const newPeriodsFromGuarantees = req.query.newPeriodsFromGuarantees ? (req.query.newPeriodsFromGuarantees === 'true') : true;
-  logger.info('New request to GET guarantees - With new periods from guarantees: ' + newPeriodsFromGuarantees);
-
-  let result;
-  if (config.streaming) {
-    logger.info('### Streaming mode ###');
-
-    res.setHeader('content-type', 'application/json; charset=utf-8');
-    result = utils.stream.createReadable();
-    result.pipe(JSONStream.stringify()).pipe(res);
-  } else {
-    logger.info('### NO Streaming mode ###');
-    result = [];
-  }
-
-  stateManager({
-    id: agreementId
-  }).then(function (manager) {
-    logger.info('Getting state of guarantees...');
+async function getAllGuarantees(req, res) {
+  try {
+    const agreementId = req.swagger.params.agreement.value;
+    const { from, to, forceUpdate } = req.query;
+    const lastPeriod = req.query.lastPeriod !== 'false';
+    const newPeriodsFromGuarantees = req.query.newPeriodsFromGuarantees !== 'false';
     const validationErrors = [];
+
+    logger.info(`New request to GET guarantees - With new periods from guarantees: ${newPeriodsFromGuarantees}`);
+
+    const result = config.streaming ? (res.setHeader('content-type', 'application/json; charset=utf-8'), utils.stream.createReadable().pipe(JSONStream.stringify()).pipe(res)) : [];
+
+    const manager = await stateManager({ id: agreementId });
+    logger.info('Getting state of guarantees...');
+
     if (config.parallelProcess.guarantees) {
       logger.info('### Process mode = PARALLEL ###');
 
-      const guaranteesPromises = [];
-      manager.agreement.terms.guarantees.forEach(function (guarantee) {
-        const query = new Query(req.query);
-
-        const validation = utils.validators.guaranteeQuery(query, guarantee.id, guarantee);
-        if (!validation.valid) {
-          validation.guarantee = guarantee.id;
-          validationErrors.push(validation);
-        } else {
-          if (req.query.forceUpdate == 'true') {
-            guaranteesPromises.push(manager.get('guarantees', query, true));
-          } else {
-            guaranteesPromises.push(manager.get('guarantees', query, false));
-          }
-        }
-      });
+      const promises = getGuaranteesPromises(manager, req.query, validationErrors);
+      const results = await Promise.all(promises.filter(Boolean));
 
       if (validationErrors.length === 0) {
-        utils.promise.processParallelPromises(manager, guaranteesPromises, result, res, config.streaming);
+        utils.promise.processParallelPromises(manager, results, result, res, config.streaming);
       } else {
+        logger.error('Error while getting guarantees (PARALLEL): ' + JSON.stringify(validationErrors));
         res.status(400).json(new ErrorModel(400, validationErrors));
       }
     } else {
       logger.info('### Process mode = SEQUENTIAL ###');
-      const guaranteesQueries = manager.agreement.terms.guarantees.reduce(function (acc, guarantee) {
-        /* Process each guarantee individually, to create queries for every one */
-        const guaranteeDefinition = manager.agreement.terms.guarantees.find((e) => {
-          return guarantee.id === e.id;
-        });
-        const requestWindow = guaranteeDefinition.of[0].window; // Get the window of the current guarantee
-        let periods;
-        /* Create all the queries corresponding for the specified period and the current guarantee */
-        let allQueries = [];
-        if (from && to) {
-          requestWindow.from = from;
-          requestWindow.end = to;
-          if (newPeriodsFromGuarantees) {
-            periods = utils.time.getPeriods(manager.agreement, requestWindow);
-          } else {
-            periods = [{ from: new Date(from).toISOString(), to: new Date(to).toISOString() }];
-          }
+      const queries = getGuaranteesQueries(manager, req.query, validationErrors, from, to, lastPeriod, newPeriodsFromGuarantees);
 
-          // Create query for every period
-          allQueries = periods.map(function (period) {
-            return buildGuaranteeQuery(guarantee.id, period.from, period.to);
-          });
-        } else {
-          if (lastPeriod) {
-            const period = utils.time.getLastPeriod(manager.agreement, requestWindow);
-            allQueries.push(buildGuaranteeQuery(guarantee.id, period.from, period.to));
-          } else {
-            allQueries.push(guarantee.id);
-          }
-        }
-        /* Validate queries and add to the list */
-        const queries = [...acc];
-        for (const query of allQueries) {
-          const validation = utils.validators.guaranteeQuery(query, guarantee.id);
-          if (!validation.valid) {
-            validation.guarantee = guarantee.id;
-            validationErrors.push(validation);
-          } else {
-            queries.push(query);
-          }
-        }
-        return queries;
-      }, []);
-      if (validationErrors.length === 0) {
-        if (req.query.forceUpdate == 'true') {
-          utils.promise.processSequentialPromises('guarantees', manager, guaranteesQueries, result, res, config.streaming, true);
-        } else {
-          utils.promise.processSequentialPromises('guarantees', manager, guaranteesQueries, result, res, config.streaming, false);
-        }
-      } else {
+      if (validationErrors.length > 0) {
+        logger.error('Error while getting guarantees (SEQUENTIAL): ' + JSON.stringify(validationErrors));
         res.status(400).json(new ErrorModel(400, validationErrors));
+      } else {
+        logger.info('Getting guarantees...');
+        utils.promise.processSequentialPromises('guarantees', manager, queries, result, res, config.streaming, forceUpdate === 'true');
       }
     }
-  }, function (err) {
-    logger.error('(guarantee controller)' + err);
-    res.status(500).json(new ErrorModel(500, err));
+  } catch (err) {
+    logger.error(`Error while processing guarantees: ${err}`);
+    res.status(500).json(new ErrorModel(500, err.message));
+  }
+}
+
+function getGuaranteesPromises(manager, query, validationErrors) {
+  return manager.agreement.terms.guarantees.map(async (guarantee) => {
+    const queryObject = new Query(query);
+    const validation = utils.validators.guaranteeQuery(queryObject, guarantee.id, guarantee);
+    
+    if (!validation.valid) {
+      validation.guarantee = guarantee.id;
+      validationErrors.push(validation);
+      logger.error('Error while getting guarantees: ' + JSON.stringify(validationErrors));
+      return null;
+    }
+
+    return manager.get('guarantees', queryObject, query.forceUpdate === 'true');
   });
+}
+
+function getGuaranteesQueries(manager, query, validationErrors, from, to, lastPeriod, newPeriodsFromGuarantees) {
+  return manager.agreement.terms.guarantees.reduce((queries, guarantee) => {
+    const guaranteeDefinition = manager.agreement.terms.guarantees.find(e => e.id === guarantee.id);
+    const requestWindow = guaranteeDefinition.of[0].window;
+
+    let allQueries = [];
+    if (from && to) {
+      requestWindow.from = from;
+      requestWindow.end = to;
+      const periods = newPeriodsFromGuarantees ? utils.time.getPeriods(manager.agreement, requestWindow) : [{ from: new Date(from).toISOString(), to: new Date(to).toISOString() }];
+      allQueries = periods.map(period => buildGuaranteeQuery(guarantee.id, period.from, period.to));
+    } else if (lastPeriod) {
+      const period = utils.time.getLastPeriod(manager.agreement, requestWindow);
+      allQueries.push(buildGuaranteeQuery(guarantee.id, period.from, period.to));
+    } else {
+      allQueries.push(guarantee.id);
+    }
+
+    allQueries.forEach(query => {
+      const validation = utils.validators.guaranteeQuery(query, guarantee.id);
+      if (!validation.valid) {
+        validation.guarantee = guarantee.id;
+        validationErrors.push(validation);
+        logger.error('Error while getting guarantees: ' + JSON.stringify(validationErrors));
+      } else {
+        queries.push(query);
+      }
+    });
+    return queries;
+  }, []);
 }
 
 /**
@@ -218,7 +210,7 @@ function getAllGuarantees (req, res) {
  * @param {Object} next next function
  * @alias module:guarantees.getGuaranteeById
  * */
-async function getGuaranteeById (req, res) {
+function getGuaranteeById(req, res) {
   logger.info('New request to GET guarantee');
   const args = req.swagger.params;
   const agreementId = args.agreement.value;
@@ -244,10 +236,9 @@ async function getGuaranteeById (req, res) {
     if (!lasts) {
       lasts = 2;
     }
-    const StateModel = db.models.StateModel;
 
     let dbresult;
-    await StateModel.find({ agreementId, id: guaranteeId }).limit(1000).sort({ 'period.from': -1 })
+    State.find({ agreementId, id: guaranteeId }).limit(1000).sort({ 'period.from': -1 })
       .exec((err, states) => {
         if (err) {
           res.status(500).json(new ErrorModel(500, err));
@@ -293,7 +284,7 @@ async function getGuaranteeById (req, res) {
         const validation = utils.validators.guaranteeQuery(queryInd, guaranteeId, guaranteeDefinition);
         if (!validation.valid) {
           const errorString = 'Query validation error';
-          return controllerErrorHandler(res, 'guarantees-controller', '_getGuaranteeById', 400, errorString);
+          return controllerErrorHandler(res, 'guarantees-controller', 'getGuaranteeById', 400, errorString);
         } else {
           return manager.get('guarantees', queryInd, JSON.parse(forceUpdate)).then(function (success) {
             if (config.streaming) {
@@ -309,7 +300,7 @@ async function getGuaranteeById (req, res) {
             }
           }, function (err) {
             const errorString = 'Error retrieving guarantee ' + guaranteeId;
-            return controllerErrorHandler(res, 'guarantees-controller', '_getGuaranteeById', err.code || 500, errorString, err);
+            return controllerErrorHandler(res, 'guarantees-controller', 'getGuaranteeById', err.code || 500, errorString, err);
           });
         }
       }).then(function () {
@@ -321,48 +312,114 @@ async function getGuaranteeById (req, res) {
       });
     }, function (err) {
       const errorString = 'Error while initializing state manager for agreement: ' + agreementId;
-      return controllerErrorHandler(res, 'guarantees-controller', '_getGuaranteeById', err.code || 500, errorString, err);
+      return controllerErrorHandler(res, 'guarantees-controller', 'getGuaranteeById', err.code || 500, errorString, err);
     });
   }
 }
 
-/**
- * This method returns a well formed query for stateManager.
- * @param {String} guaranteeId Id of guarantee which will be calculated
- * @param {ISODateString} from YYYY-MM-DDTHH:mm:ss.SSSZ
- * @return {ISODateString} to YYYY-MM-DDTHH:mm:ss.SSSZ
- * */
-function buildGuaranteeQuery (guaranteeId, from, to) {
-    const query = {};
-    query.guarantee = guaranteeId;
-    if (from) {
-      query.period = {};
-      query.period.from = from;
+async function getGuaranteeById(req, res) {
+  try {
+    const args = req.swagger.params;
+    const agreementId = args.agreement.value;
+    const guaranteeId = args.guarantee.value;
+    const queryOptions = {
+      forceUpdate: req.query.forceupdate ? req.query.forceupdate : 'false',
+      from: req.query.from,
+      to: req.query.to,
+      withNoEvidences: req.query.withNoEvidences ? req.query.withNoEvidences : 'false',
+      lasts: req.query.lasts,
+    };
+
+    logger.info('New request to GET guarantee');
+    const agreement = await getAgreement(agreementId);
+    const guarantee = agreement.terms.guarantees.find((e) => e.id === guaranteeId);
+    
+    if (config.streaming) {
+      logger.info('### Streaming mode ###');
+      res.setHeader('content-type', 'application/json; charset=utf-8');
+      const resultStream = await getGuaranteeStream(agreement, guarantee, queryOptions);
+      resultStream.pipe(JSONStream.stringify()).pipe(res);
+    } else {
+      logger.info('### NO Streaming mode ###');
+      const result = await getGuarantee(agreement, guarantee, queryOptions);
+      res.json(result);
     }
-    if (to) {
-      query.period.to = to;
-    }
-    return query;
+  } catch (error) {
+    const errorString = error.message || 'Internal Server Error';
+    const statusCode = error.statusCode || 500;
+    return controllerErrorHandler(res, 'guarantees-controller', 'getGuaranteeById', statusCode, errorString, error);
   }
-  
-/**
- * This method returns 'true' or 'false' when check if query is complied.
- * @param {StateModel} state state
- * @param {QueryModel} query query
- * @return {Boolean} ret
- * */
-function checkQuery (state, query) {
-  let ret = true;
-  for (const v in query) {
-    if (v !== 'parameters' && v !== 'evidences' && v !== 'logs' && v !== 'window') {
-      if (query[v] instanceof Object) {
-        ret = ret && _checkQuery(state[v], query[v]);
-      } else {
-        if ((state[v] !== query[v] && query[v] !== '*') || !state[v]) {
-          ret = ret && false;
-        }
-      }
-    }
+}
+
+async function getGuaranteeStream(agreement, guarantee, queryOptions) {
+  const stateManager = await getStateManager(agreement.id);
+  const queryGenerator = getQueryGenerator(guarantee, queryOptions, stateManager.agreement);
+  const validationErrors = validateQueries(queryGenerator, guarantee);
+  if (validationErrors.length) {
+    throw { message: 'Query validation error', statusCode: 400 };
   }
-  return ret;
+  return utils.stream.createReadable(async (push) => {
+    for await (const query of queryGenerator) {
+      const result = await stateManager.get('guarantees', query, JSON.parse(queryOptions.forceUpdate));
+      result.forEach((element) => push(stateManager.current(element)));
+    }
+    push(null);
+  });
+}
+
+async function getGuarantee(agreement, guarantee, queryOptions) {
+  const stateManager = await getStateManager(agreement.id);
+  const queryGenerator = getQueryGenerator(guarantee, queryOptions, stateManager.agreement);
+  const validationErrors = validateQueries(queryGenerator, guarantee);
+  if (validationErrors.length) {
+    throw { message: 'Query validation error', statusCode: 400 };
+  }
+  const result = [];
+  for await (const query of queryGenerator) {
+    const queryResult = await stateManager.get('guarantees', query, JSON.parse(queryOptions.forceUpdate));
+    queryResult.forEach((element) => result.push(stateManager.current(element)));
+  }
+  if (queryOptions.withNoEvidences === 'true') {
+    result.filter((state) => state.records.evidences.length === 0);
+  }
+  if (queryOptions.lasts) {
+    result.slice(0, queryOptions.lasts);
+  }
+  return result;
+}
+
+function getQueryGenerator(guarantee, queryOptions, agreement) {
+  const requestWindow = guarantee.of[0].window;
+
+  const periods = utils.time.getPeriods(agreement, requestWindow, queryOptions.from, queryOptions.to);
+  const promises = periods.map((period) => {
+    return buildGuaranteeQuery(guarantee.id, period.from, period.to);
+  });
+
+  return Promise.all(promises);
+}
+
+async function getAgreement(agreementId) {
+  try {
+    const manager = await stateManager({ id: agreementId });
+    const agreement = manager.agreement;
+    return agreement;
+  } catch (err) {
+    const errorString = 'Error while initializing state manager for agreement: ' + agreementId;
+    throw new ErrorModel(err.code || 500, errorString, err);
+  }
+}
+
+/**
+ * This method returns a well-formed query for the stateManager.
+ * @param {String} guaranteeId - Id of guarantee which will be calculated
+ * @param {ISODateString} from - YYYY-MM-DDTHH:mm:ss.SSSZ
+ * @param {ISODateString} to - YYYY-MM-DDTHH:mm:ss.SSSZ
+ * @returns {Object} query
+ */
+function buildGuaranteeQuery(guaranteeId, from, to) {
+  const query = { guarantee: guaranteeId };
+  if (from) query.period = { from };
+  if (to) query.period = { ...query.period, to };
+  return query;
 }

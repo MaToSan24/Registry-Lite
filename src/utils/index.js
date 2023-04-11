@@ -78,7 +78,7 @@ module.exports = {
      * @see module:utils.middlewares
      * */
   middlewares: require('./middlewares.js'),
-  containsObject: _containsObject
+  containsObject
 
 };
 
@@ -88,7 +88,7 @@ module.exports = {
  * @param {array} array array to search into
  * @alias module:utils.containsObject
  * */
-function _containsObject (obj, array) {
+function containsObject (obj, array) {
   for (let i = 0; i < array.length; i++) {
     const difs = diff(array[i], obj);
     if (difs === undefined || difs === null) {

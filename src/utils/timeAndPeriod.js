@@ -34,10 +34,9 @@ const gPeriods = governify.periods;
  * */
 
 module.exports = {
-  getPeriods: _getPeriods,
-  getLastPeriod: _getLastPeriod,
-  periods: periods,
-  convertPeriod: _convertPeriod
+  getPeriods,
+  getLastPeriod,
+  periods: periods
 };
 
 /**
@@ -47,7 +46,7 @@ module.exports = {
  * @return {Set} set of periods
  * @alias module:utils.getPeriods
  * */
-function _getPeriods (agreement, window) {
+function getPeriods (agreement, window) {
   if (!window) {
     window = {};
   }
@@ -69,7 +68,7 @@ function _getPeriods (agreement, window) {
  * @return {Set} set of periods
  * @alias module:utils.getLastPeriod
  * */
-function _getLastPeriod (agreement, window) {
+function getLastPeriod (agreement, window) {
   if (!window) {
     window = {};
   }

@@ -37,9 +37,7 @@ const logger = governify.getLogger().tag('stream-manager');
  * */
 
 module.exports = {
-
-  createReadable: _createReadable
-
+  createReadable
 };
 
 /**
@@ -48,7 +46,7 @@ module.exports = {
  * @return {streamReadable} streamReadable streamReadable for pipe
  * @alias module:utils.stream.createReadable
  * */
-function _createReadable (readFunction) {
+function createReadable (readFunction) {
   const streamReadable = new stream.Readable({
 
     objectMode: true

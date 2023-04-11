@@ -40,8 +40,8 @@ module.exports = {
   createAgreement,
   deleteAllAgreements,
   deleteAgreementById,
-  getTermsByAgreementId,
-  getGuaranteesByAgreementId
+  getGuaranteesByAgreementId,
+  getGuaranteeByAgreementIdAndGuaranteeId
 };
 
 /**
@@ -100,17 +100,6 @@ function deleteAgreementById (req, res, next) {
 }
 
 /**
- * getTermsByAgreementId.
- * @param {Object} req request
- * @param {Object} res response
- * @param {Object} next next function
- * @alias module:AgreementController.getTermsByAgreementId
- * */
-function getTermsByAgreementId (req, res, next) {
-  agreements.getTermsByAgreementId(req.swagger.params, res, next);
-}
-
-/**
  * getGuaranteesByAgreementId.
  * @param {Object} req request
  * @param {Object} res response
@@ -119,4 +108,15 @@ function getTermsByAgreementId (req, res, next) {
  * */
 function getGuaranteesByAgreementId (req, res, next) {
   agreements.getGuaranteesByAgreementId(req.swagger.params, res, next);
+}
+
+/**
+ * getGuaranteeByAgreementIdAndGuaranteeId.
+ * @param {Object} req request
+ * @param {Object} res response
+ * @param {Object} next next function
+ * @alias module:AgreementController.getGuaranteeByAgreementIdAndGuaranteeId
+ * */
+function getGuaranteeByAgreementIdAndGuaranteeId (req, res, next) {
+  agreements.getGuaranteeByAgreementIdAndGuaranteeId(req.swagger.params, res, next);
 }

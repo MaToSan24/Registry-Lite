@@ -60,33 +60,29 @@ module.exports = {
  * @param {Object} next next function
  * @alias module:metrics.increaseMetricById
  * */
-function increaseMetricById (args, res) {
-  const agreementId = args.agreement.value;
-  const metricId = args.metric.value;
-  const query = args.scope.value;
+async function increaseMetricById(args, res) {
+  try {
+    const agreementId = args.agreement.value;
+    const metricId = args.metric.value;
+    const query = args.scope.value;
 
-  logger.info('New request to increase metric = %s, with values = %s', metricId, JSON.stringify(query, null, 2));
-
-  stateManager({
-    id: agreementId
-  }).then(function (manager) {
+    logger.info(`New request to increase metric = ${metricId}, with values = ${JSON.stringify(query, null, 2)}`);
+    const manager = await stateManager({ id: agreementId });
     query.metric = metricId;
-    manager.get('metrics', query).then(function (metric) {
-      logger.info('Result of getting metricValues: ' + JSON.stringify(metric, null, 2));
-      logger.info('Query to put ' + JSON.stringify(query, null, 2));
-      manager.put('metrics', query, manager.current(metric[0]).value + 1).then(function (success) {
-        res.json(success.map(function (element) {
-          return manager.current(element);
-        }));
-      }, function (err) {
-        res.status(err.code).json(err);
-      });
-    }, function (err) {
-      res.status(err.code).json(err);
-    });
-  }, function (err) {
-    res.status(err.code).json(err);
-  });
+    const metric = await manager.get('metrics', query);
+    logger.info(`Result of getting metricValues: ${JSON.stringify(metric, null, 2)}`);
+
+    const newValue = manager.current(metric[0]).value + 1;
+    logger.info(`Query to put ${JSON.stringify(query, null, 2)} with new value = ${newValue}`);
+    const success = await manager.put('metrics', query, newValue);
+
+    let result = success.map(element => manager.current(element));
+    logger.info(`Result of increasing metric: ${JSON.stringify(result, null, 2)}`);
+    res.send(result);
+  } catch (err) {
+    logger.error(err);
+    res.status(err.code).send(err);
+  }
 }
 
 /**
@@ -94,31 +90,26 @@ function increaseMetricById (args, res) {
  * @param {Object} args {agreement: String, metric: String, metricValue: String}
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:metrics.metricsIdPUT
+ * @alias module:metrics.modifyMetricById
  * */
-function modifyMetricById (args, res) {
-  const agreementId = args.agreement.value;
-  const metricValue = args.metricValue.value;
-  const metricId = args.metric.value;
-  // var query = new Query(req.query);
+async function modifyMetricById(args, res) {
+  try {
+    const agreementId = args.agreement.value;
+    const metricValue = args.metricValue.value;
+    const metricId = args.metric.value;
 
-  logger.info('New request to PUT metrics over: ' + metricId + ' with value: ' + metricValue);
-
-  stateManager({
-    id: agreementId
-  }).then(function (manager) {
-    manager.put('metrics', {
+    logger.info(`New request to PUT metrics over: ${metricId} with value: ${JSON.stringify(metricValue)}`);
+    const manager = await stateManager({ id: agreementId });
+    const success = await manager.put('metrics', {
       metric: metricId,
       scope: metricValue.scope,
       window: metricValue.window
-    }, metricValue.value).then(function (success) {
-      res.json(success.map(function (element) {
-        return manager.current(element);
-      }));
-    }, function (err) {
-      res.status(err.code).json(err);
-    });
-  }, function (err) {
-    res.status(err.code).json(err);
-  });
+    }, metricValue.value);
+
+    let result = success.map(element => manager.current(element));
+    logger.info(`Result of modifying metric: ${JSON.stringify(result, null, 2)}`);
+    res.send(result);
+  } catch (err) {
+    res.status(err.code).send(err);
+  }
 }
