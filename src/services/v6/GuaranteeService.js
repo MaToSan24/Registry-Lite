@@ -33,11 +33,10 @@ const config = governify.configurator.getConfig('main');
 const logger = governify.getLogger().tag('guarantees');
 const ErrorModel = require('../../../../errors').errorModel;
 
-const stateManager = require('../../../../stateManager/v6/state-manager');
-const db = require('../../../../database');
+const stateManager = require('../../stateManager/v6/state-manager');
+const db = require('../../database');
 
-const gUtils = require('./gUtils.js');
-const utils = require('../../../../utils');
+const utils = require('../../utils');
 
 const Query = utils.Query;
 const controllerErrorHandler = utils.errors.controllerErrorHandler;
@@ -52,12 +51,11 @@ const controllerErrorHandler = utils.errors.controllerErrorHandler;
  * @requires stream
  * @requires errors
  * @requires stateManager
- * @requires gUtils
  * */
 module.exports = {
+  getGuarantees,
   getAllGuarantees,
   getGuaranteeById,
-  getGuarantees
 };
 
 // Method used internally
@@ -69,7 +67,7 @@ function getGuarantees (agreementId, guaranteeId, query, forceUpdate) {
       const guaranteesQueries = [];
       const validationErrors = [];
       manager.agreement.terms.guarantees.forEach(function (guarantee) {
-        const queryM = gUtils.buildGuaranteeQuery(guarantee.id, query.from, query.to);
+        const queryM = buildGuaranteeQuery(guarantee.id, query.from, query.to);
 
         const validation = utils.validators.guaranteeQuery(queryM, guarantee.id, guarantee);
         if (!validation.valid) {
@@ -174,12 +172,12 @@ function getAllGuarantees (req, res) {
 
           // Create query for every period
           allQueries = periods.map(function (period) {
-            return gUtils.buildGuaranteeQuery(guarantee.id, period.from, period.to);
+            return buildGuaranteeQuery(guarantee.id, period.from, period.to);
           });
         } else {
           if (lastPeriod) {
             const period = utils.time.getLastPeriod(manager.agreement, requestWindow);
-            allQueries.push(gUtils.buildGuaranteeQuery(guarantee.id, period.from, period.to));
+            allQueries.push(buildGuaranteeQuery(guarantee.id, period.from, period.to));
           } else {
             allQueries.push(guarantee.id);
           }
@@ -249,8 +247,6 @@ async function getGuaranteeById (req, res) {
     const StateModel = db.models.StateModel;
 
     let dbresult;
-    console.log("Agreement ID INDICE: ", agreementId);
-    console.log("Guarantee ID INDICE: ", guaranteeId);
     await StateModel.find({ agreementId, id: guaranteeId }).limit(1000).sort({ 'period.from': -1 })
       .exec((err, states) => {
         if (err) {
@@ -286,10 +282,10 @@ async function getGuaranteeById (req, res) {
         periods = utils.time.getPeriods(manager.agreement, requestWindow);
         // Create query for every period
         allQueries = periods.map(function (period) {
-          return gUtils.buildGuaranteeQuery(guaranteeId, period.from, period.to);
+          return buildGuaranteeQuery(guaranteeId, period.from, period.to);
         });
       } else {
-        allQueries.push(gUtils.buildGuaranteeQuery(guaranteeId));
+        allQueries.push(buildGuaranteeQuery(guaranteeId));
       }
       const results = [];
       logger.info('Processing ' + allQueries.length + ' queries for the request');
@@ -328,4 +324,45 @@ async function getGuaranteeById (req, res) {
       return controllerErrorHandler(res, 'guarantees-controller', '_getGuaranteeById', err.code || 500, errorString, err);
     });
   }
+}
+
+/**
+ * This method returns a well formed query for stateManager.
+ * @param {String} guaranteeId Id of guarantee which will be calculated
+ * @param {ISODateString} from YYYY-MM-DDTHH:mm:ss.SSSZ
+ * @return {ISODateString} to YYYY-MM-DDTHH:mm:ss.SSSZ
+ * */
+function buildGuaranteeQuery (guaranteeId, from, to) {
+    const query = {};
+    query.guarantee = guaranteeId;
+    if (from) {
+      query.period = {};
+      query.period.from = from;
+    }
+    if (to) {
+      query.period.to = to;
+    }
+    return query;
+  }
+  
+/**
+ * This method returns 'true' or 'false' when check if query is complied.
+ * @param {StateModel} state state
+ * @param {QueryModel} query query
+ * @return {Boolean} ret
+ * */
+function checkQuery (state, query) {
+  let ret = true;
+  for (const v in query) {
+    if (v !== 'parameters' && v !== 'evidences' && v !== 'logs' && v !== 'window') {
+      if (query[v] instanceof Object) {
+        ret = ret && _checkQuery(state[v], query[v]);
+      } else {
+        if ((state[v] !== query[v] && query[v] !== '*') || !state[v]) {
+          ret = ret && false;
+        }
+      }
+    }
+  }
+  return ret;
 }

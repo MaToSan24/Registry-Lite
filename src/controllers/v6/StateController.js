@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 'use strict';
 
-const states = require('./states/states.js');
+const service = require('../../services/v6/StateService.js');
 
 /**
  * Registry states module.
@@ -36,139 +36,90 @@ const states = require('./states/states.js');
  * */
 module.exports = {
   // Agreement
-  getAgreementById,
-  statesAgreementRELOAD,
-  deleteAgreementById,
-  statesDELETE,
-  // Guarantees
-  getAllGuarantees,
-  statesAgreementGuaranteesGuaranteeGET,
+  getAgreementStatesById,
+  deleteAllAgreementsStates,
+  deleteAgreementStatesById,
+  recalculateAgreementStateById,
   // Metrics
-  statesAgreementgetAllMetricsStates,
-  statesAgreementMetricsMetricGET,
-  statesAgreementMetricsMetricIncreasePOST,
-  statesAgreementMetricsMetricPOST,
-
-  statesFilter
+  getAllMetricsStates,
+  getMetricStatesById,
+  // States
+  getAgreementsStatesFiltered
 };
 
 /**
- * getAgreementById.
+ * getAgreementStatesById.
  * @param {Object} req request
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:StateController.getAgreementById
+ * @alias module:StateController.getAgreementStatesById
  * */
-function getAgreementById (req, res, next) {
-  states.agreements.getAgreementById(req.swagger.params, res, next);
+function getAgreementStatesById (req, res, next) {
+  service.getAgreementStatesById(req.swagger.params, res, next);
 }
 
 /**
- * deleteAgreementById.
+ * deleteAgreementStatesById.
  * @param {Object} req request
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:StateController.deleteAgreementById
+ * @alias module:StateController.deleteAgreementStatesById
  * */
-function deleteAgreementById (req, res, next) {
-  states.agreements.deleteAgreementById(req.swagger.params, res, next);
+function deleteAgreementStatesById (req, res, next) {
+  service.deleteAgreementStatesById(req.swagger.params, res, next);
 }
 
 /**
- * statesAgreementRELOAD.
+ * recalculateAgreementStateById.
  * @param {Object} req request
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:StateController.statesAgreementRELOAD
+ * @alias module:StateController.recalculateAgreementStateById
  * */
-function statesAgreementRELOAD (req, res, next) {
-  states.agreements.agreementIdRELOAD(req.swagger.params, res, next);
+function recalculateAgreementStateById (req, res, next) {
+  service.recalculateAgreementStateById(req.swagger.params, res, next);
 }
 
 /**
- * getAllGuarantees.
+ * getAllMetricsStates.
  * @param {Object} req request
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:StateController.getAllGuarantees
+ * @alias module:StateController.getAllMetricsStates
  * */
-function getAllGuarantees (req, res, next) {
-  states.agreements.getAllGuarantees(req, res, next);
+function getAllMetricsStates (req, res, next) {
+  service.getAllMetricsStates(req, res, next);
 }
 
 /**
- * statesAgreementGuaranteesGuaranteeGET.
+ * getMetricStatesById.
  * @param {Object} req request
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:StateController.statesAgreementGuaranteesGuaranteeGET
+ * @alias module:StateController.getMetricStatesById
  * */
-function statesAgreementGuaranteesGuaranteeGET (req, res, next) {
-  states.agreements.getGuaranteeById(req, res, next);
+function getMetricStatesById (req, res, next) {
+  service.getMetricStatesById(req, res, next);
 }
 
 /**
- * statesAgreementMetricsPOST.
+ * deleteAllAgreementsStates.
  * @param {Object} req request
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:StateController.statesAgreementMetricsPOST
+ * @alias module:StateController.deleteAllAgreementsStates
  * */
-function statesAgreementgetAllMetricsStates (req, res, next) {
-  states.metrics.getAllMetricsStates(req, res, next);
+function deleteAllAgreementsStates (req, res, next) {
+  service.deleteAllAgreementsStates(req.swagger.params, res, next);
 }
 
 /**
- * statesAgreementMetricsMetricPOST.
+ * getAgreementsStatesFiltered.
  * @param {Object} req request
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:StateController.statesAgreementMetricsMetricPOST
+ * @alias module:StateController.getAgreementsStatesFiltered
  * */
-function statesAgreementMetricsMetricGET (req, res, next) {
-  states.metrics.getMetricStatesById(req, res, next);
-}
-
-/**
- * statesAgreementMetricsMetricIncreasePOST.
- * @param {Object} req request
- * @param {Object} res response
- * @param {Object} next next function
- * @alias module:StateController.statesAgreementMetricsMetricIncreasePOST
- * */
-function statesAgreementMetricsMetricIncreasePOST (req, res, next) {
-  states.metrics.increaseMetricById(req.swagger.params, res, next);
-}
-
-/**
- * statesAgreementMetricsMetricPOST.
- * @param {Object} req request
- * @param {Object} res response
- * @param {Object} next next function
- * @alias module:StateController.statesAgreementMetricsMetricPOST
- * */
-function statesAgreementMetricsMetricPOST (req, res, next) {
-  states.metrics.modifyMetricById(req.swagger.params, res, next);
-}
-
-/**
- * statesDELETE.
- * @param {Object} req request
- * @param {Object} res response
- * @param {Object} next next function
- * @alias module:StateController.statesDELETE
- * */
-function statesDELETE (req, res, next) {
-  states.agreements.statesDELETE(req.swagger.params, res, next);
-}
-
-/**
- * statesFilter.
- * @param {Object} req request
- * @param {Object} res response
- * @param {Object} next next function
- * @alias module:StateController.statesFilter
- * */
-function statesFilter (req, res, next) {
-  states.agreements.statesFilter(req, res, next);
+function getAgreementsStatesFiltered (req, res, next) {
+  service.getAgreementsStatesFiltered(req, res, next);
 }

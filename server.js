@@ -32,17 +32,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * @requires middlewares
  * */
 module.exports = {
-  deploy: _deploy,
-  undeploy: _undeploy
+  deploy,
+  undeploy
 };
 
 /**
- * getAgreementById.
+ * deploy.
  * @param {Object} configurations configuration object
  * @param {function} callback callback function
  * @alias module:registry.deploy
  * */
-function _deploy (configurations, commonsMiddleware, callback) {
+function deploy (configurations, commonsMiddleware, callback) {
   const governify = require('governify-commons');
   const config = governify.configurator.getConfig('main');
 
@@ -191,11 +191,11 @@ function _deploy (configurations, commonsMiddleware, callback) {
 }
 
 /**
- * _undeploy.
+ * undeploy.
  * @param {function} callback callback function
  * @alias module:registry.undeploy
  * */
-function _undeploy (callback) {
+function undeploy (callback) {
   if (db) {
     db.close(function () {
       server.close(function () {

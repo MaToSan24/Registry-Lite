@@ -29,13 +29,11 @@ const { getLogger } = require('governify-commons');
 const logger = getLogger().tag('agreement-manager');
 const $RefParser = require('json-schema-ref-parser');
 
-const states = require('../../controllers/v6/states/states');
 const ErrorModel = require('../../../errors/index.js').errorModel;
 
 import State from '../../models/State.js';
 import Agreement from '../../models/Agreement.js';
-
-import { statesDELETE } from '../../controllers/v6/states/agreements/agreements.js'
+import { deleteAgreementStatesById, deleteAllAgreementsStates } from './StateService.js';
 
 /**
  * Registry agreement module.
@@ -44,16 +42,15 @@ import { statesDELETE } from '../../controllers/v6/states/agreements/agreements.
  * @see module:AgreementService
  * @requires config
  * @requires database
- * @requires states
  * @requires StateService
  * @requires errors
  * @requires json-schema-ref-parser
  * */
 module.exports = {
-  createAgreement,
-  deleteAllAgreements,
   getAllAgreements,
   getAgreementById,
+  createAgreement,
+  deleteAllAgreements,
   deleteAgreementById,
   getTermsByAgreementId,
   getGuaranteesByAgreementId
@@ -137,7 +134,7 @@ async function deleteAllAgreements(args, res) {
     logger.info('New request to DELETE all agreements');
     await Agreement.deleteMany({});
     logger.info('Deleted all agreements');
-    await statesDELETE(args, res);
+    await deleteAllAgreementsStates(args, res);
   } catch (err) {
     res.sendStatus(404);
     logger.warn("Couldn't delete all agreements: ", err.message);
@@ -163,7 +160,7 @@ async function deleteAgreementById(args, res) {
     }
     logger.info(`Agreement with ID ${agreementId} successfully deleted`);
     args.agreements = args.agreement;
-    states.agreements.deleteAgreementById(args, res);
+    deleteAgreementStatesById(args, res);
   } catch (err) {
     logger.error(err.toString());
     res.status(500).json(new ErrorModel(500, err));

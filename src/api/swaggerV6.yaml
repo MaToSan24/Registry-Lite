@@ -14,10 +14,10 @@ info:
 host: registry.governify.io
 basePath: /api/v6
 tags:
-  - name: agreement-registry
-    description: Agreement registry
-  - name: state-registry
-    description: State registry
+  - name: AgreementController
+    description: Agreement Controller
+  - name: StateController
+    description: State Controller
 schemes:
   - http
   - https
@@ -29,7 +29,7 @@ paths:
   /agreements:
     get:
       tags:
-        - agreement-registry
+        - AgreementController
       description: Get all agreements
       operationId: getAllAgreements
       responses:
@@ -46,7 +46,7 @@ paths:
       x-swagger-router-controller: AgreementController
     delete:
       tags:
-        - agreement-registry
+        - AgreementController
       description: XXX
       operationId: deleteAllAgreements
       responses:
@@ -63,7 +63,7 @@ paths:
       x-swagger-router-controller: AgreementController
     post:
       tags:
-        - agreement-registry
+        - AgreementController
       description: Create a new agreement
       operationId: createAgreement
       parameters:
@@ -84,7 +84,7 @@ paths:
   '/agreements/{agreement}':
     get:
       tags:
-        - agreement-registry
+        - AgreementController
       description: Get an agreement by ID
       operationId: getAgreementById
       parameters:
@@ -109,7 +109,7 @@ paths:
       x-swagger-router-controller: AgreementController
     delete:
       tags:
-        - agreement-registry
+        - AgreementController
       description: XXX
       operationId: deleteAgreementById
       parameters:
@@ -131,7 +131,7 @@ paths:
   /states:
     get:
       tags:
-        - state-registry
+        - StateController
       description: XXX
       operationId: statesGET
       responses:
@@ -148,9 +148,9 @@ paths:
       x-swagger-router-controller: StateController
     delete:
       tags:
-        - state-registry
+        - StateController
       description: XXX
-      operationId: statesDELETE
+      operationId: deleteAllAgreementsStates
       responses:
         '200':
           description: Success
@@ -162,9 +162,9 @@ paths:
   '/states/{agreement}/filtered':
     get:
       tags:
-        - state-registry
+        - StateController
       description: XXX
-      operationId: statesFilter
+      operationId: getAgreementsStatesFiltered
       parameters:
         - name: agreement
           in: path
@@ -186,9 +186,9 @@ paths:
   '/states/{agreement}':
     get:
       tags:
-        - state-registry
+        - StateController
       description: XXX
-      operationId: getAgreementById
+      operationId: getAgreementStatesById
       parameters:
         - name: agreement
           in: path
@@ -207,9 +207,9 @@ paths:
       x-swagger-router-controller: StateController
     delete:
       tags:
-        - state-registry
+        - StateController
       description: XXX
-      operationId: deleteAgreementById
+      operationId: deleteAgreementStatesById
       parameters:
         - name: agreement
           in: path
@@ -227,9 +227,9 @@ paths:
   '/states/{agreement}/reload':
     get:
       tags:
-        - state-registry
+        - StateController
       description: XXX
-      operationId: statesAgreementRELOAD
+      operationId: recalculateAgreementStateById
       parameters:
         - name: agreement
           in: path
@@ -249,7 +249,7 @@ paths:
   '/states/{agreement}/guarantees':
     get:
       tags:
-        - state-registry
+        - StateController
       description: XXX
       operationId: getAllGuarantees
       parameters:
@@ -273,9 +273,9 @@ paths:
   '/states/{agreement}/guarantees/{guarantee}':
     get:
       tags:
-        - state-registry
+        - StateController
       description: XXX
-      operationId: statesAgreementGuaranteesGuaranteeGET
+      operationId: getGuaranteeById
       parameters:
         - name: agreement
           in: path
@@ -327,9 +327,9 @@ paths:
   '/states/{agreement}/metrics':
     get:
       tags:
-        - state-registry
+        - StateController
       description: XXX
-      operationId: statesAgreementgetAllMetricsStates
+      operationId: getAllMetricsStates
       parameters:
         - name: agreement
           in: path
@@ -349,9 +349,9 @@ paths:
   '/states/{agreement}/metrics/{metric}':
     get:
       tags:
-        - state-registry
+        - StateController
       description: XXX
-      operationId: statesAgreementMetricsMetricGET
+      operationId: getMetricStatesById
       parameters:
         - name: agreement
           in: path
@@ -375,9 +375,9 @@ paths:
       x-swagger-router-controller: StateController
     post:
       tags:
-        - state-registry
+        - StateController
       description: XXX
-      operationId: statesAgreementMetricsMetricPOST
+      operationId: modifyMetricById
       parameters:
         - name: agreement
           in: path
@@ -408,7 +408,7 @@ paths:
   '/states/{agreement}/metrics/{metric}/records':
     get:
       tags:
-        - state-registry
+        - StateController
       description: XXX
       operationId: statesAgreementMetricsMetricRecordsGET
       parameters:
@@ -435,9 +435,9 @@ paths:
   '/states/{agreement}/metrics/{metric}/increase':
     post:
       tags:
-        - state-registry
+        - StateController
       description: XXX
-      operationId: statesAgreementMetricsMetricIncreasePOST
+      operationId: increaseMetricById
       parameters:
         - name: agreement
           in: path

@@ -25,26 +25,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 'use strict';
 
-/**
- * States module.
- * @module states
- * @see module:StateController
- * @see module:StateService
- */
+const service = require('../../services/v6/MetricService.js');
+
 module.exports = {
-  /**
-     * Whole agreement state.
-     * @see module:agreementsState
-     * */
-  agreements: require('./agreements/agreements.js'),
-  /**
-     * Guarantees state.
-     * @see module:agreementsState
-     * */
-  guarantees: require('./guarantees/guarantees.js'),
-  /**
-     * Metrics state.
-     * @see module:agreementsState
-     * */
-  metrics: require('./metrics/metrics.js'),
+    increaseMetricById,
+    modifyMetricById
 };
+
+/**
+ * increaseMetricById.
+ * @param {Object} req request
+ * @param {Object} res response
+ * @param {Object} next next function
+ * @alias module:MetricController.increaseMetricById
+ */
+function increaseMetricById(req, res, next) {
+    service.increaseMetricById(req.swagger.params, res, next);
+}
+
+/**
+ * modifyMetricById.
+ * @param {Object} req request
+ * @param {Object} res response
+ * @param {Object} next next function
+ * @alias module:MetricController.modifyMetricById
+ */
+function modifyMetricById(req, res, next) {
+    service.modifyMetricById(req.swagger.params, res, next);
+}

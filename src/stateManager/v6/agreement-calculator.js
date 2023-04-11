@@ -42,7 +42,7 @@ const promiseErrorHandler = utils.errors.promiseErrorHandler;
  * @see module:calculators
  * */
 module.exports = {
-  process: _process
+  process
 };
 
 /**
@@ -55,7 +55,7 @@ module.exports = {
  * */
 
 // from and to parameters in future versions , from, to
-function _process (manager, parameters) {
+function process (manager, parameters) {
   return new Promise(function (resolve, reject) {
     try {
       if (!parameters) {

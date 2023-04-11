@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 'use strict';
 
-const agreements = require('./agreements/agreements.js');
+const agreements = require('../../services/v6/AgreementService.js');
 
 /**
  * Registry agreement module.

@@ -82,10 +82,10 @@ function initialize (_agreement) {
         // current ==> do a map over state an returns the current record for this state.
         const stateManager = {
           agreement: ag,
-          get: _get,
-          put: _put,
-          update: _update,
-          current: _current
+          get,
+          put,
+          update,
+          current
         };
         return resolve(stateManager);
       }
@@ -95,14 +95,14 @@ function initialize (_agreement) {
 
 /**
  * Gets one or more states by an specific query.
- * @function _get
+ * @function get
  * @param {String} stateType enum: {guarantees, agreement, metrics}
  * @param {StateManagerQuery} query query will be matched with an state.
  * @return {Promise} Promise that will return an array of state objects
  * */
-function _get (stateType, query, forceUpdate) {
+function get (stateType, query, forceUpdate) {
   const stateManager = this;
-  logger.debug('(_get) Retrieving state of ' + stateType + ' - ForceUpdate: ' + forceUpdate);
+  logger.debug('(GET) Retrieving state of ' + stateType + ' - ForceUpdate: ' + forceUpdate);
   return new Promise(function (resolve, reject) {
     logger.debug('Getting ' + stateType + ' state for query =  ' + JSON.stringify(query));
     const StateModel = db.models.StateModel;
@@ -149,16 +149,16 @@ function _get (stateType, query, forceUpdate) {
 
 /**
  * Add states with an specific query.
- * @function _put
+ * @function put
  * @param {String} stateType enum: {guarantees, agreement, metrics}
  * @param {StateManagerQuery} query query will be matched with an state.
  * @param {Object} value value
  * @param {Object} metadata {logsState, evidences, parameters}.
  * @return {Promise} Promise that will return an array of state objects
  * */
-function _put (stateType, query, value, metadata) {
+function put (stateType, query, value, metadata) {
   const stateManager = this;
-  logger.debug('(_put) Saving state of ' + stateType);
+  logger.debug('(PUT) Saving state of ' + stateType);
   return new Promise(function (resolve, reject) {
     const StateModel = db.models.StateModel;
 
@@ -245,15 +245,15 @@ function _put (stateType, query, value, metadata) {
 
 /**
  * Modify states with an specific query.
- * @function _update
+ * @function update
  * @param {String} stateType enum: {guarantees, agreement, metrics}
  * @param {StateManagerQuery} query query will be matched with an state.
  * @param {Object} logsState logsState
  * @return {Promise} Promise that will return an array of state objects
  * */
-function _update (stateType, query, logsState, forceUpdate) {
+function update (stateType, query, logsState, forceUpdate) {
   const stateManager = this;
-  logger.debug('(_update) Updating state of ' + stateType);
+  logger.debug('(UPDATE) Updating state of ' + stateType);
   return new Promise(function (resolve, reject) {
     switch (stateType) {
       case 'agreement':
@@ -387,12 +387,12 @@ function getCurrent (state) {
 }
 
 /**
- * _current.
+ * current.
  * @function _current
  * @param {Object} state state
  * @return {object} state
  * */
-function _current (state) {
+function current (state) {
   const newState = {
     stateType: state.stateType,
     agreementId: state.agreementId,
