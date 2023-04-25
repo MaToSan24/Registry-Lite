@@ -30,53 +30,42 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
 module.exports = class Query {
-  constructor (args) {
+  constructor(args) {
     // BUILD scope
-    const scope = addComplexParameter(args, 'scope');
+    this.scope = addComplexParameter(args, 'scope');
 
     // BUILD parameters
-    const parameters = addComplexParameter(args, 'parameters');
+    this.parameters = addComplexParameter(args, 'parameters');
 
     // BUILD window
-    const window = addComplexParameter(args, 'window');
+    this.window = addComplexParameter(args, 'window');
 
     // BUILD period
-    const period = addComplexParameter(args, 'period');
+    this.period = addComplexParameter(args, 'period');
 
-    // BUILD period
-    const logs = addComplexParameter(args, 'logs');
-
-    if (scope) { this.scope = scope; }
-    if (parameters) { this.parameters = parameters; }
-    if (window) { this.window = window; }
-    if (period) { this.period = period; }
-    if (logs) { this.logs = logs; }
+    // BUILD logs
+    this.logs = addComplexParameter(args, 'logs');
   }
 
-  static parseToQueryParams (object, root) {
+  /**
+   * Converts an object to a string with query parameters
+   * @static
+   * @param {Object} object - The object to convert to query parameters.
+   * @param {string} root - The root of the object.
+   * @returns {string} The query parameters string.
+   */
+  static parseToQueryParams(object, root = '') {
     let string = '';
-    // For each field in object
-    for (const f in object) {
-      const field = object[f];
-      // Check if it is an Object, an Array or a literal value
-      if (field instanceof Object && !(field instanceof Array)) {
-        // If it is an object do recursive
-        string += this.parseToQueryParams(field, (root ? root + '.' : '') + f);
-      } else if (field instanceof Array) {
+    for (const [key, value] of Object.entries(object)) {
+      // Check if it is an Object or a literal value
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        string += this.parseToQueryParams(value, root + `${key}.`);
+      } else if (Array.isArray(value)) {
         // If it is an array convert to a list of id
-        string += (root ? root + '.' : '') + f + '=' + field.map((e) => {
-          if (typeof e === 'string') {
-            return e;
-          } else if (e.id) {
-            return e.id;
-          } else {
-            return this.parseToQueryParams(e, (root ? root + '.' : '') + f); // FIXME
-          }
-        }).join(',');
-        string += '&';
+        string += root + key + '=' + value.map(e => typeof e === 'string' ? e : e.id || this.parseToQueryParams(e, root + `${key}.`)).join(',') + '&';
       } else {
         // If it is a literal convert to "name=value&" format
-        string += (root ? root + '.' : '') + f + '=' + field + '&';
+        string += root + key + '=' + value + '&';
       }
     }
     return string;
@@ -84,21 +73,22 @@ module.exports = class Query {
 };
 
 /**
- * @function Function transform from http request to query object
- * @param {Object} args Query of the http request before processing
- * @param {Object} queryObject Object for adding fields
+ * Function to transform from HTTP request to query object.
+ * @param {Object} args Query of the HTTP request before processing
  * @param {String} filter Name for filtering
+ * @returns {Object} The query object.
  */
-function addComplexParameter (args, filter) {
-  const queryObject = {};
+function addComplexParameter(args, filter) {
+  let queryObject = {};
+
   Object.keys(args).forEach((e) => {
     let name = e.split('.');
 
-    const auxQueryObject = {};
     if (e.indexOf(filter) !== -1 && name[0] === filter) {
       if (name.length > 2) {
         const fieldName = name[1];
         name.splice(0, 1);
+        const auxQueryObject = {};
         auxQueryObject[name.join('.')] = args[e];
         queryObject[fieldName] = addComplexParameter(auxQueryObject, name[0]);
       } else {

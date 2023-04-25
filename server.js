@@ -20,6 +20,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 'use strict';
 
+import { getSwaggerDoc, initializeMiddleware } from './src/utils/swagger.js';
+import { stateInProgress } from './src/utils/middlewares.js';
+import { connect, close } from './src/database/index.js';
+
 /**
  * Registry module.
  * @module registry
@@ -42,26 +46,10 @@ module.exports = {
  * @param {function} callback callback function
  * @alias module:registry.deploy
  * */
-function deploy (configurations, commonsMiddleware, callback) {
+function deploy(configurations, commonsMiddleware, callback) {
   const governify = require('governify-commons');
   const config = governify.configurator.getConfig('main');
-
-  // Add this to the VERY top of the first file loaded in your app
-  const apm = require('elastic-apm-node').start({
-    // Override service name from package.json
-    // Allowed characters: a-z, A-Z, 0-9, -, _, and space
-    // Override service name from package.json
-    // Allowed characters: a-z, A-Z, 0-9, -, _, and space
-    serviceName: 'Registry',
-    serviceNodeName: 'Registry',
-    captureBody: 'all',
-    transactionMaxSpans: -1,
-    usePathAsTransactionName: true,
-    abortedErrorThreshold: 0,
-    distributedTracingOrigins: ['*'],
-    active: config.telemetry.enabled
-
-  });
+  const logger = governify.getLogger().tag('deploy');
 
   const http = require('http'); // Use http if your app will be behind a proxy.
   const https = require('https'); // Use https if your app will not be behind a proxy.
@@ -73,14 +61,8 @@ function deploy (configurations, commonsMiddleware, callback) {
   const fs = require('fs');
   const path = require('path');
 
-  // Self dependencies
-  const logger = governify.getLogger().tag('deploy');
-  const db = require('./src/database');
-  const swaggerUtils = require('./src/utils').swagger;
-  const middlewares = require('./src/utils').middlewares;
-
-  const server = null;
   const app = express();
+  const server = null;
 
   const frontendPath = path.join(__dirname, '/public');
   const serverPort = process.env.PORT || config.server.port;
@@ -134,7 +116,7 @@ function deploy (configurations, commonsMiddleware, callback) {
 
   // middleware to control when an agreement state process is already in progress
 
-  app.use('/api/v6/states/:agreement', middlewares.stateInProgress);
+  app.use('/api/v6/states/:agreement', stateInProgress);
 
   // latest documentation redirection
   app.use('/api/latest/docs', function (req, res) {
@@ -155,15 +137,13 @@ function deploy (configurations, commonsMiddleware, callback) {
     }
   }
 
-  db.connect(function (err) {
+  connect(function (err) {
     logger.info('Initializing app after db connection');
     if (!err) {
       // list of swagger documents, one for each version of the api.
-      const swaggerDocs = [
-        swaggerUtils.getSwaggerDoc(6)
-      ];
+      const swaggerDocs = [getSwaggerDoc(6)];
       // initialize swagger middleware for each swagger documents.
-      swaggerUtils.initializeMiddleware(app, swaggerDocs, function () {
+      initializeMiddleware(app, swaggerDocs, function () {
         if (process.env.HTTPS_SERVER === 'true' || config.server.listenOnHttps) {
           https.createServer({
             key: fs.readFileSync('certs/privkey.pem'),
@@ -174,7 +154,7 @@ function deploy (configurations, commonsMiddleware, callback) {
             logger.info('Swagger-ui is available on https://localhost:%d/api/%s/docs', serverPort, CURRENT_API_VERSION);
           });
         } else {
-          http.createServer(app).listen(serverPort,'0.0.0.0', function () {
+          http.createServer(app).listen(serverPort, '0.0.0.0', function () {
             logger.info('Your server is listening on port %d (http://localhost:%d)', serverPort, serverPort);
             logger.info('Swagger-ui is available on http://localhost:%d/api/%s/docs', serverPort, CURRENT_API_VERSION);
             if (callback) {
@@ -185,7 +165,7 @@ function deploy (configurations, commonsMiddleware, callback) {
       });
     } else {
       logger.error('Database connection failed', err);
-      _undeploy(process.exit(0));
+      undeploy(process.exit(0));
     }
   });
 }
@@ -195,9 +175,9 @@ function deploy (configurations, commonsMiddleware, callback) {
  * @param {function} callback callback function
  * @alias module:registry.undeploy
  * */
-function undeploy (callback) {
+function undeploy(callback) {
   if (db) {
-    db.close(function () {
+    close(function () {
       server.close(function () {
         logger.info('Server has been closed');
         callback();

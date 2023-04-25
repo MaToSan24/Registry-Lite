@@ -31,12 +31,6 @@ models:
   state:
     name: StateModel
     path: "./src/models/stateModel.json"
-  bills:
-    name: BillsModel
-    path: "./src/models/billsModel.json"
-parallelProcess:
-  guarantees: false
-  metrics: false
 retryDelay: 2000
 server:
   port: 5400
@@ -48,4 +42,3 @@ server:
   servePackageInfo: true
   listenOnHttps: false
 statusBouncer: false
-streaming: true

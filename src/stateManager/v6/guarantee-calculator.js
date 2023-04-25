@@ -27,34 +27,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 const governify = require('governify-commons');
 const logger = governify.getLogger().tag('guarantee-calculator');
-const utils = require('../../utils');
-
-const promiseErrorHandler = utils.errors.promiseErrorHandler;
-const Error = utils.errors.Error;
 
 const Promise = require('bluebird');
 const vm = require('vm');
+
+import { ErrorModel }  from '../../utils/errors.js';
+import { handlePromiseError } from '../../utils/errors.js';
+import { processSequentialPromises } from '../../utils/promise.js';
 
 /**
  * Guarantee calculator module.
  * @module guaranteeCalculator
  * @requires config
- * @requires utils
- * @requires bluebird
  * @requires vm
  * @see module:calculators
  * */
 module.exports = {
-  processAll: processGuarantees,
-  process: processGuarantee
+  processAllGuarantees,
+  processGuarantee
 };
 
 /**
  * Process all guarantees.
  * @param {Object} agreement agreement
- * @alias module:guaranteeCalculator.processAll
+ * @alias module:guaranteeCalculator.processAllGuarantees
  * */
-function processGuarantees (agreement, forceUpdate) {
+function processAllGuarantees (agreement, forceUpdate) {
   return new Promise(function (resolve, reject) {
     const processGuarantees = [];
 
@@ -63,11 +61,10 @@ function processGuarantees (agreement, forceUpdate) {
       processGuarantees.push(processGuarantee(agreement, guarantee.id, true));
     });
 
-    utils.promise.processParallelPromises(null, processGuarantees, null, null, null)
+    processSequentialPromises(null, processGuarantees, null, null)
       .then(resolve)
       .catch(function (err) {
-        const errorString = 'Error processing guarantees';
-        return promiseErrorHandler(reject, 'guarantees', 'processGuarantees', 500, errorString, err);
+        return handlePromiseError(reject, 'guarantees', 'processAllGuarantees', 500, 'Error processing guarantees', err);
       });
   });
 }
@@ -77,7 +74,7 @@ function processGuarantees (agreement, forceUpdate) {
  * @param {Object} agreement agreement
  * @param {Object} guaranteeId guarantee ID
  * @param {Object} manager manager
- * @alias module:guaranteeCalculator.process
+ * @alias module:guaranteeCalculator.processGuarantee
  * */
 function processGuarantee (manager, query, forceUpdate) {
   const agreement = manager.agreement;
@@ -93,8 +90,7 @@ function processGuarantee (manager, query, forceUpdate) {
 
     logger.debug('Processing guarantee: ' + guaranteeId);
     if (!guarantee) {
-      const errorString = 'Guarantee ' + guaranteeId + ' not found.';
-      return promiseErrorHandler(reject, 'guarantees', 'processGuarantees', 404, errorString);
+      return handlePromiseError(reject, 'guarantees', 'processGuarantees', 404, 'Guarantee ' + guaranteeId + ' not found.');
     }
     // We prepare the parameters needed by the processScopedGuarantee function
     const processScopedGuarantees = guarantee.of.reduce(function (acc, ofElement, index) {
@@ -133,8 +129,7 @@ function processGuarantee (manager, query, forceUpdate) {
         guaranteeValues: guaranteesValues
       });
     }).catch(function (err) {
-      const errorString = 'Error processing scoped guarantee for: ' + guarantee.id;
-      return promiseErrorHandler(reject, 'guarantees', 'processGuarantee', 500, errorString, err);
+      return handlePromiseError(reject, 'guarantees', 'processGuarantee', 500, 'Error processing scoped guarantee for: ' + guarantee.id, err);
     });
   });
 }
@@ -222,7 +217,7 @@ function processScopedGuarantee (manager, query, guarantee, ofElement, forceUpda
                 period: metricValue.period
               };
               // We check if a timedScope exists
-              let tsIndex = utils.containsObject(ts, timedScopes);
+              let tsIndex = timedScopes.findIndex(item => isEqual(item, ts))
               if (tsIndex == -1) {
                 // If no exists, we create it
                 tsIndex = timedScopes.push(ts) - 1;
@@ -262,13 +257,12 @@ function processScopedGuarantee (manager, query, guarantee, ofElement, forceUpda
         logger.debug('Guarantees values: ' + JSON.stringify(guaranteesValues, null, 2));
         return resolve(guaranteesValues);
       }).catch(function (err) {
-        const errorString = 'Error processing timedScopes metrics for guarantee: ' + guarantee.id;
-        return promiseErrorHandler(reject, 'guarantees', 'processScopedGuarantee', 500, errorString, err);
+        return handlePromiseError(reject, 'guarantees', 'processScopedGuarantee', 500, 'Error processing timedScopes metrics for guarantee: ' + guarantee.id, err);
       });
     });
   } catch (err) {
     // Controlling errors that are not in promises
-    const error = new Error(500, '', err);
+    const error = new ErrorModel(500, '', err);
     logger.error(error.toString());
   }
 }

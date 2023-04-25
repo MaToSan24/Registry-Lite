@@ -29,13 +29,9 @@ const governify = require('governify-commons');
 const config = governify.configurator.getConfig('main');
 const logger = governify.getLogger().tag('metrics');
 
-const ErrorModel = require('../../../../errors/index.js').errorModel;
 const stateManager = require('../../stateManager/v6/state-manager.js');
-const utils = require('../../utils/index.js');
 
-const Query = utils.Query;
-const JSONStream = require('JSONStream');
-const controllerErrorHandler = utils.errors.controllerErrorHandler;
+// import ErrorModel from '../../utils/errors.js';
 
 /**
  * Metrics module
@@ -43,8 +39,6 @@ const controllerErrorHandler = utils.errors.controllerErrorHandler;
  * @see module:states
  * @requires config
  * @requires bluebird
- * @requires JSONStream
- * @requires stream
  * @requires errors
  * @requires stateManager
  * */

@@ -29,52 +29,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * @module utils.scopes
  */
 module.exports = {
-  /**
-     * @function
-     * @param
-     */
-  registryToComputerParser: _registryToComputerParser,
-
-  /**
-     * @function
-     * @param
-     */
-  computerToRegistryParser: _computerToRegistryParser
+  registryToComputerParser,
+  computerToRegistryParser
 };
 
-function _computerToRegistryParser (computerScope, mapping) {
+function createMappedScope(scope, mapping) {
   const mappedScope = {};
-  // reversing mapping
-  const mappingReversed = {};
-  for (const field in mapping) {
-    mappingReversed[mapping[field]] = field;
-  }
 
-  for (const scopeField in computerScope) {
-    const mappedScopeField = mappingReversed[scopeField];
-
-    if (mappingReversed && mappedScopeField) {
-      mappedScope[mappedScopeField] = computerScope[scopeField];
-    } else {
-      mappedScope[scopeField] = computerScope[scopeField];
-    }
+  for (const [key, value] of Object.entries(scope)) {
+    const mappedKey = mapping[key] || key;
+    mappedScope[mappedKey] = value;
   }
 
   return mappedScope;
 }
 
-function _registryToComputerParser (queryScope, mapping) {
-  const mappedScope = {};
-
-  for (const scopeField in queryScope) {
-    const mappedScopeField = mapping[scopeField];
-
-    if (mapping && mappedScopeField) {
-      mappedScope[mappedScopeField] = queryScope[scopeField];
-    } else {
-      mappedScope[scopeField] = queryScope[scopeField];
-    }
+function computerToRegistryParser(computerScope, mapping) {
+  const reversedMapping = {};
+  for (const [key, value] of Object.entries(mapping)) {
+    reversedMapping[value] = key;
   }
-
-  return mappedScope;
+  return createMappedScope(computerScope, reversedMapping);
 }
+
+function registryToComputerParser(queryScope, mapping) {
+  return createMappedScope(queryScope, mapping);
+}
+

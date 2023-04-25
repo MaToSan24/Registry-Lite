@@ -27,162 +27,38 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 const Promise = require('bluebird');
 const governify = require('governify-commons');
 const logger = governify.getLogger().tag('promise-manager');
-const ErrorModel = require('../errors/index.js').errorModel;
 
-const errors = require('./errors');
-const controllerErrorHandler = errors.controllerErrorHandler;
-const promiseErrorHandler = errors.promiseErrorHandler;
 
+import { handlePromiseError } from './errors.js';
+import { handleError } from './errors.js';
 /**
  * Utils module.
  * @module utils.promises
- * @requires stream
  * @requires config
  * @requires errors
  * */
 
 module.exports = {
-  processParallelPromises: _processParallelPromises,
-  processSequentialPromises: _processSequentialPromises
+  processSequentialPromises
 };
-
-/**
- * Process mode.
- * @param {StateManager} manager StateManager instance
- * @param {Array} promisesArray array of promises to processing
- * @param {Object} result Array or stream with the result
- * @param {ResponseObject} res To respond the request
- * @param {Boolean} streaming Decide if stream or not stream response
- * @alias module:gUtils.processMode
- * */
-function _processParallelPromises (manager, promisesArray, result, res, streaming) {
-  if (!result && !res) {
-    // Promise mode
-    result = [];
-
-    return new Promise(function (resolve, reject) {
-      Promise.settle(promisesArray).then(function (promisesResults) {
-        try {
-          if (promisesResults.length > 0) {
-            for (const r in promisesResults) {
-              const onePromiseResults = promisesResults[r];
-              if (onePromiseResults.isFulfilled()) {
-                onePromiseResults.value().forEach(function (value) {
-                  if (manager) {
-                    result.push(manager.current(value));
-                  } else {
-                    result.push(value);
-                  }
-                });
-              }
-            }
-            resolve(result);
-          } else {
-            const err = 'Error processing Promises: empty result';
-            logger.error(err);
-            reject(err.toString());
-          }
-        } catch (err) {
-          logger.error(err);
-          reject(err.toString());
-        }
-      }, function (err) {
-        logger.error(err);
-        reject(err.toString());
-      });
-    });
-  } else {
-    // Controller mode using streaming
-    Promise.settle(promisesArray).then(function (promisesResults) {
-      try {
-        if (promisesResults.length > 0) {
-          for (const r in promisesResults) {
-            const onePromiseResults = promisesResults[r];
-            if (onePromiseResults.isFulfilled()) {
-              onePromiseResults.value().forEach(function (value) {
-                if (manager) {
-                  result.push(manager.current(value));
-                } else {
-                  result.push(value);
-                }
-              });
-            }
-          }
-          if (streaming) {
-            result.push(null);
-          } else {
-            res.json(result);
-          }
-        } else {
-          const err = 'Error processing Promises: empty result';
-          logger.error(err);
-          res.status(500).json(new ErrorModel(500, err));
-        }
-      } catch (err) {
-        logger.error(err);
-        res.status(500).json(new ErrorModel(500, err));
-      }
-    }, function (err) {
-      logger.error(err);
-      res.status(500).json(new ErrorModel(500, err));
-    });
-  }
-}
 
 /**
  * Process mode.
  * @param {String} type Type of state to be required (e.g. 'metrics')
  * @param {StateManager} manager StateManager instance
- * @param {Array} queries array of queries to processing
- * @param {Object} result Array or stream with the result
- * @param {ResponseObject} res To respond the request
- * @param {Boolean} streaming Decide if stream or not stream response
- * @alias module:gUtils.processMode
+ * @param {Array} queries Array of queries to process
  * */
-function _processSequentialPromises (type, manager, queries, result, res, streaming, forceUpdate) {
-  if (!result && !res) {
-    // Promise mode
-    result = [];
-
-    return new Promise(function (resolve, reject) {
-      Promise.each(queries, function (query) {
-        return manager.get(type, query, forceUpdate).then(function (states) {
-          for (const i in states) {
-            const state = states[i];
-            result.push(manager.current(state));
-          }
-        });
-        // This catch will be controller by the each.catch in order to stop
-        // the execution when 1 promise fails
-      }).then(function () {
-        resolve(result);
-      }).catch(function (err) {
-        const errorString = 'Error processing sequential promises';
-        return promiseErrorHandler(reject, 'promise', '_processSequentialPromises', 500, errorString, err);
-      });
-    });
-  } else {
-    // Controller mode using streaming
-    Promise.each(queries, function (query) {
-      return manager.get(type, query, forceUpdate).then(function (states) {
-        for (const i in states) {
-          const state = states[i];
-          // feeding stream
-          result.push(manager.current(state));
-        }
-      });
-      // This catch will be controller by the each.catch in order to stop
-      // the execution when 1 promise fails
-    }).then(function () {
-      // end stream
-      if (streaming) {
-        result.push(null);
-      } else {
-        res.json(result);
+async function processSequentialPromises(type, manager, queries, forceUpdate) {
+  try {
+    let result = [];
+    for (const query of queries) {
+      const states = await manager.get(type, query, forceUpdate);
+      for (const state of states) {
+        result.push(manager.current(state));
       }
-    }).catch(function (err) {
-      const errorString = 'Error processing sequential promises in controllers';
-      return controllerErrorHandler(res, 'promise', '_processSequentialPromises', 500, errorString, JSON.stringify(err));
-    });
+    }
+    return result;
+  } catch (error) {
+    throw handleError('promise', 'processSequentialPromises', 500, 'Error processing sequential promises', error);
   }
 }

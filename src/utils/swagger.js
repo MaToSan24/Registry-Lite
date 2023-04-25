@@ -38,9 +38,9 @@ const swaggerTools = require('swagger-tools');
  * @requires swagger-tools
  * */
 module.exports = {
-  getRouterOption: _getRouterOption,
-  getSwaggerDoc: _getSwaggerDoc,
-  initializeMiddleware: _initializeMiddleware
+  getRouterOption,
+  getSwaggerDoc,
+  initializeMiddleware
 };
 
 /**
@@ -49,7 +49,7 @@ module.exports = {
  * @return {Object} options The object which defines the option that is given to the swagger router component.
  * @alias module:swagger.getRouterOption
  * */
-function _getRouterOption (version) {
+function getRouterOption (version) {
   return {
     swaggerUi: '/swaggerV' + version + '.json',
     controllers: './src/controllers/v' + version
@@ -62,7 +62,7 @@ function _getRouterOption (version) {
  * @return {Object} swaggerDoc The object which represent the swagger document.
  * @alias module:swagger.getSwaggerDoc
  * */
-function _getSwaggerDoc (version) {
+function getSwaggerDoc (version) {
   const spec = fs.readFileSync('./src/api/swaggerV' + version + '.yaml', 'utf8');
   return jsyaml.safeLoad(spec);
 }
@@ -75,7 +75,7 @@ function _getSwaggerDoc (version) {
  * @return {Express} app for chaining
  * @alias module:swagger.initializeMiddleware
  * */
-function _initializeMiddleware (app, swaggerDocs, callback) {
+function initializeMiddleware (app, swaggerDocs, callback) {
   swaggerDocs.forEach(function (swaggerDoc, index) {
     swaggerTools.initializeMiddleware(swaggerDoc, function (middleware) {
       // Interpret Swagger resources and attach metadata to request must be first in swagger-tools middleware chain

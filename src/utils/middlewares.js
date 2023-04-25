@@ -28,7 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 const governify = require('governify-commons');
 const config = governify.configurator.getConfig('main');
 const logger = governify.getLogger().tag('state-middleware');
-const ErrorModel = require('../errors/index.js').errorModel;
+
+import { ErrorModel } from './errors.js';
 
 /**
  * Swagger module.
@@ -37,10 +38,10 @@ const ErrorModel = require('../errors/index.js').errorModel;
  * @requires config
  * */
 module.exports = {
-  stateInProgress: _stateInProgress
+  stateInProgress
 };
 
-const agreementsInProgress = [];
+let agreementsInProgress = [];
 
 /**
  * Middleware to control when an agreement state process is already in progress
@@ -49,12 +50,12 @@ const agreementsInProgress = [];
  * @param {Function} next The next fuction for the chain
  * @alias module:middlewares.stateInProgress
  * */
-function _stateInProgress (req, res, next) {
-  // TODO: In case that we want to implement a functionality to obtain all the agreements currently being calculated, implement this function correctly
+export function stateInProgress(req, res, next) {
   logger.info('New request to retrieve state for agreement %s', JSON.stringify(req.params.agreement, null, 2));
-  if (agreementsInProgress.indexOf(req.params.agreement) !== -1) {
-    logger.info('Agreement %s status: In-Progress. Ignoring request...', req.params.agreement);
-    res.json(new ErrorModel(202, 'Agreement %s status: In-Progress. Try again when the agreement calculation has finished', req.params.agreement));
+
+  if (agreementsInProgress.includes(req.params.agreement)) {
+    logger.info(`Agreement ${req.params.agreement} status: In-Progress. Ignoring request...`);
+    res.json(new ErrorModel(202, `Agreement ${req.params.agreement} status: In-Progress. Try again when the agreement calculation has finished`));
   } else {
     if (config.statusBouncer) {
       agreementsInProgress.push(req.params.agreement);
@@ -67,6 +68,7 @@ function _stateInProgress (req, res, next) {
         logger.info('Agreement status has been changed to: Idle');
       }
     });
+
     next();
   }
 }

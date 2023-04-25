@@ -25,7 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 'use strict';
 
-const Ajv = require('ajv');
+import Ajv from 'ajv';
+import schema from '../schemas/query-schema.json';
 
 /**
  * Metrics module
@@ -33,26 +34,19 @@ const Ajv = require('ajv');
  * @see module:validators
  * */
 module.exports = {
-  /**
-     * Validate query for metrics
-     * @param {Object} query query
-     * @param {Object} metricId ID of the metric
-     * @param {Object} metricDefinition Definition of the metric
-     * @alias module:validators.metricQuery
-     * */
-  metricQuery: _metricQuery,
-  /**
-     * Validate query for guarantee
-     * @param {Object} query query
-     * @param {Object} guaranteeId ID of the guarantee
-     * @param {Object} guaranteeDefinition Definition of the guarantee
-     * @alias module:validators.metricQuery
-     * */
-  guaranteeQuery: _guaranteeQuery,
+  metricQuery,
+  guaranteeQuery,
 };
 
-function _metricQuery (query, metricId, metricDefinition) {
-  const schema = require('../schemas/query-schema.json');
+
+/**
+ * Validate query for metrics
+ * @param {Object} query query
+ * @param {Object} metricId ID of the metric
+ * @param {Object} metricDefinition Definition of the metric
+ * @alias module:validators.metricQuery
+ * */
+function metricQuery(query, metricId, metricDefinition) {
 
   // windows are required in metrics
   schema.required = ['scope', 'window'];
@@ -63,12 +57,7 @@ function _metricQuery (query, metricId, metricDefinition) {
   // Parameters is not required add empty object if it is null.
   if (!query.parameters) { query.parameters = {}; }
 
-  query.period = query.period
-    ? query.period
-    : {
-      from: query.window ? query.window.initial : '*',
-      to: query.window ? query.window.end : '*'
-    };
+  query.period = query.period || { from: query.window ? query.window.initial : '*', to: query.window ? query.window.end : '*' };
 
   if (!schemaValidationResults.isValid) {
     validation = validation && false;
@@ -95,13 +84,54 @@ function _metricQuery (query, metricId, metricDefinition) {
 
   delete schema.required;
 
-  return {
-    valid: validation,
-    errors: errors
-  };
+  return { valid: validation, errors: errors };
 }
 
-function _guaranteeQuery (query, guaranteeId /*, guaranteeDefinition */) {
+function metricQuery(query, metricId, metricDefinition) {
+
+  // Windows are required in metrics
+  schema.required = ['scope', 'window'];
+
+  const schemaValidationResults = schemaValidation(schema, query);
+  const errors = [];
+
+  // Set default values
+  query.parameters = query.parameters ?? {};
+  query.period = query.period ?? { from: query.window?.initial ?? '*', to: query.window?.end ?? '*' };
+
+  if (!schemaValidationResults.isValid) {
+    errors.push(...schemaValidationResults.errors.map((e) => e.message));
+  }
+
+  // Parameters are only needed if they are present in the metric definition
+  const parameterNames = Object.keys(metricDefinition.parameters ?? {});
+  const inParametersCount = Object.keys(query.parameters).length;
+  if (parameterNames.length !== inParametersCount && parameterNames.length !== 0) {
+    errors.push(`Metric ${metricId} needs parameters: ${parameterNames.join(', ')}`);
+  }
+
+  // Add default values for scopes
+  const scopeDef = metricDefinition.scope;
+  Object.entries(scopeDef ?? {}).forEach(([s, def]) => {
+    query.scope[s] = query.scope[s] ?? def.default;
+  });
+
+  query.metric = metricId;
+
+  delete schema.required;
+
+  return { valid: errors.length === 0, errors };
+}
+
+
+/**
+ * Validate query for guarantee
+ * @param {Object} query query
+ * @param {Object} guaranteeId ID of the guarantee
+ * @param {Object} guaranteeDefinition Definition of the guarantee
+ * @alias module:validators.metricQuery
+ * */
+function guaranteeQuery(query, guaranteeId /*, guaranteeDefinition */) {
   const schema = require('../schemas/query-schema.json');
 
   const schemaValidationResults = schemaValidation(schema, query);
@@ -135,7 +165,7 @@ function _guaranteeQuery (query, guaranteeId /*, guaranteeDefinition */) {
   };
 }
 
-function schemaValidation (schema, data) {
+function schemaValidation(schema, data) {
   const ajv = new Ajv();
   const querySchemaValidator = ajv.compile(schema);
 

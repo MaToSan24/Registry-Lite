@@ -30,14 +30,12 @@ const config = governify.configurator.getConfig('main');
 const logger = governify.getLogger().tag('state-manager');
 
 const db = require('../../database');
-const ErrorModel = require('../../errors/index.js').errorModel;
-const calculators = require('./calculators.js');
-
 const Promise = require('bluebird');
-// const request = require('requestretry');
-// const iso8601 = require('iso8601');
-const utils = require('../../utils');
-const promiseErrorHandler = utils.errors.promiseErrorHandler;
+
+import { processAgreement } from '../../stateManager/v6/agreement-calculator.js';
+import { processAllGuarantees } from '../../stateManager/v6/guarantee-calculator.js';
+import { processAllMetrics } from '../../stateManager/v6/metric-calculator.js';
+import { ErrorModel, handlePromiseError } from '../../utils/errors.js';
 
 /**
  * State manager module.
@@ -45,7 +43,6 @@ const promiseErrorHandler = utils.errors.promiseErrorHandler;
  * @requires config
  * @requires database
  * @requires errors
- * @requires calculators
  * @requires bluebird
  * @requires requestretry
  * */
@@ -57,7 +54,7 @@ module.exports = initialize;
  * @return {Promise} Promise that will return a StateManager object
  * @alias module:stateManager.initialize
  * */
-function initialize (_agreement) {
+function initialize(_agreement) {
   logger.debug('(initialize) Initializing state with agreement ID = ' + _agreement.id);
   return new Promise(function (resolve, reject) {
     const AgreementModel = db.models.AgreementModel;
@@ -77,8 +74,9 @@ function initialize (_agreement) {
         }
         logger.debug('StateManager for agreementID = ' + _agreement.id + ' initialized');
         // Building stateManager object with agreement definitions and stateManager method
-        // get ==> gets one or more states, put ==> save an scoped state,
-        // update ==> calculates one or more states and save them,
+        // get ==> gets one or more states
+        // put ==> save an scoped state
+        // update ==> calculates one or more states and save them
         // current ==> do a map over state an returns the current record for this state.
         const stateManager = {
           agreement: ag,
@@ -100,7 +98,7 @@ function initialize (_agreement) {
  * @param {StateManagerQuery} query query will be matched with an state.
  * @return {Promise} Promise that will return an array of state objects
  * */
-function get (stateType, query, forceUpdate) {
+function get(stateType, query, forceUpdate) {
   const stateManager = this;
   logger.debug('(GET) Retrieving state of ' + stateType + ' - ForceUpdate: ' + forceUpdate);
   return new Promise(function (resolve, reject) {
@@ -112,7 +110,6 @@ function get (stateType, query, forceUpdate) {
     // Executes a mongodb query to search States file that match with query
     // projectionBuilder(...) builds a mongodb query from StateManagerQuery
     // refineQuery(...) ensures that the query is well formed, chooses and renames fields to make a well formed query.
-    console.log("STATE MANAGER INDICE 1: ", projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query)));
     StateModel.find(projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query)), function (err, result) {
       if (err) {
         // Something failed on mongodb query and error is returned
@@ -140,7 +137,7 @@ function get (stateType, query, forceUpdate) {
           return resolve(states);
         }).catch(function (err) {
           const errorString = 'Error getting metrics';
-          return promiseErrorHandler(reject, 'state-manager', '_get', 500, errorString, err);
+          return handlePromiseError(reject, 'state-manager', '_get', 500, errorString, err);
         });
       }
     });
@@ -156,7 +153,7 @@ function get (stateType, query, forceUpdate) {
  * @param {Object} metadata {logsState, evidences, parameters}.
  * @return {Promise} Promise that will return an array of state objects
  * */
-function put (stateType, query, value, metadata) {
+function put(stateType, query, value, metadata) {
   const stateManager = this;
   logger.debug('(PUT) Saving state of ' + stateType);
   return new Promise(function (resolve, reject) {
@@ -166,7 +163,6 @@ function put (stateType, query, value, metadata) {
     const dbQuery = projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query));
     logger.debug('Updating ' + stateType + ' state... with refinedQuery = ' + JSON.stringify(dbQuery, null, 2));
 
-    console.log("STATE MANAGER INDICE 2: ", dbQuery);
     StateModel.update(dbQuery, {
       $push: {
         records: new Record(value, metadata)
@@ -199,20 +195,11 @@ function put (stateType, query, value, metadata) {
               return reject(new ErrorModel(500, err));
             } else {
               logger.debug('Inserted new Record in the new ' + stateType + ' state.');
-              console.log("STATE MANAGER INDICE 3: ", projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query)));
               StateModel.find(projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query)), function (err, result) {
                 if (err) {
                   logger.error(err.toString());
                   return reject(new ErrorModel(500, err));
                 }
-                /*    if (result.length != 1) {
-                                    logger.error("Inconsistent DB: multiple states for query = " + JSON.stringify(refineQuery(stateManager.agreement.id, stateType, query), null, 2));
-                                    logger.error("DB result = " + JSON.stringify(result, null, 2));
-                                    return reject(new ErrorModel(500, "Inconsistent DB: multiple states for query " + JSON.stringify(refineQuery(stateManager.agreement.id, stateType, query), null, 2)));
-                                } else { */
-                                if(query.scope.servicio==="INT_PRV_CITASEVO_V1.0.0"){
-                                  console.log(result)
-                                }
                 return resolve(result);
                 //   }
               });
@@ -222,20 +209,12 @@ function put (stateType, query, value, metadata) {
           // There is some state for Guarantee / Metric , ....
           // Lets add a new Record.
           logger.debug('Inserted new Record of ' + stateType + ' state.');
-          console.log("STATE MANAGER INDICE 4: ", projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query)));
           StateModel.find(projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query)), function (err, result) {
-            // console.log("STATE MANAGER INDICE 4 RESULT: ", result);
             if (err) {
               logger.error(err.toString());
               return reject(new ErrorModel(500, err));
             }
-            /*     if (result.length != 1) {
-                            logger.error("Inconsistent DB: multiple states for query = " + JSON.stringify(refineQuery(stateManager.agreement.id, stateType, query), null, 2));
-                            logger.error("DB result = " + JSON.stringify(result, null, 2));
-                            return reject(new ErrorModel(500, "Inconsistent DB: multiple states for query " + JSON.stringify(refineQuery(stateManager.agreement.id, stateType, query), null, 2)));
-                        } else { */             
             return resolve(result);
-            // }
           });
         }
       }
@@ -251,21 +230,15 @@ function put (stateType, query, value, metadata) {
  * @param {Object} logsState logsState
  * @return {Promise} Promise that will return an array of state objects
  * */
-function update (stateType, query, logsState, forceUpdate) {
+function update(stateType, query, logsState, forceUpdate) {
   const stateManager = this;
   logger.debug('(UPDATE) Updating state of ' + stateType);
   return new Promise(function (resolve, reject) {
     switch (stateType) {
       case 'agreement':
-        calculators.agreementCalculator.process(stateManager)
+        processAgreement(stateManager)
           .then(function (states) {
-            // states.forEach((state)=>{
-            // 	stateManager.put(state.stateType, agreementState).then(function (data) {
             return resolve(states);
-            //     }, function (err) {
-            //         return reject(err);
-            //     });
-            // });
           }, function (err) {
             logger.error(err.toString());
             return reject(new ErrorModel(500, err));
@@ -275,7 +248,7 @@ function update (stateType, query, logsState, forceUpdate) {
         const guaranteeDefinition = stateManager.agreement.terms.guarantees.find((e) => {
           return query.guarantee === e.id;
         });
-          calculators.guaranteeCalculator.process(stateManager, query, forceUpdate)
+        processAllGuarantees(stateManager, query, forceUpdate)
           .then(function (guaranteeStates) {
             logger.debug('Guarantee states for ' + guaranteeStates.guaranteeId + ' have been calculated (' + guaranteeStates.guaranteeValues.length + ') ');
             logger.debug('Guarantee states: ' + JSON.stringify(guaranteeStates, null, 2));
@@ -304,12 +277,12 @@ function update (stateType, query, logsState, forceUpdate) {
           }).catch(function (err) {
             logger.error(err);
             const errorString = 'Error processing guarantees';
-            return promiseErrorHandler(reject, 'state-manager', '_update', 500, errorString, err);
+            return handlePromiseError(reject, 'state-manager', '_update', 500, errorString, err);
           });
         // }
         break;
       case 'metrics':
-        calculators.metricCalculator.process(stateManager.agreement, query.metric, query)
+        processAllMetrics(stateManager.agreement, query.metric, query)
           .then(function (metricStates) {
             logger.debug('Metric states for ' + metricStates.metricId + ' have been calculated (' + metricStates.metricValues.length + ') ');
             const processMetrics = [];
@@ -337,7 +310,7 @@ function update (stateType, query, logsState, forceUpdate) {
             });
           }).catch(function (err) {
             const errorString = 'Error processing metrics';
-            return promiseErrorHandler(reject, 'state-manager', '_update', 500, errorString, err);
+            return handlePromiseError(reject, 'state-manager', '_update', 500, errorString, err);
           });
         break;
       default:
@@ -353,7 +326,7 @@ function update (stateType, query, logsState, forceUpdate) {
  * @param {String} query query will be matched with an state.
  * @param {Object} metadata {logsState, evidences, parameters}
  * */
-function State (value, query, metadata) {
+function State(value, query, metadata) {
   for (const v in query) {
     this[v] = query[v];
   }
@@ -367,7 +340,7 @@ function State (value, query, metadata) {
  * @param {Object} value value
  * @param {Object} metadata {logsState, evidences, parameters}
  * */
-function Record (value, metadata) {
+function Record(value, metadata) {
   this.value = value;
   this.time = new Date().toISOString();
   if (metadata) {
@@ -378,30 +351,21 @@ function Record (value, metadata) {
 }
 
 /**
- * Get current state.
- * @function getCurrent
- * @param {Object} state state
- * */
-function getCurrent (state) {
-  return state.records[state.records.length - 1];
-}
-
-/**
  * current.
  * @function _current
  * @param {Object} state state
  * @return {object} state
  * */
-function current (state) {
+function current(state) {
   const newState = {
     stateType: state.stateType,
     agreementId: state.agreementId,
     id: state.id,
     scope: state.scope,
     period: state.period,
-    window: state.window ? state.window : undefined
+    window: state.window
   };
-  const currentRecord = getCurrent(state);
+  const currentRecord = state.records[state.records.length - 1];
   for (const v in currentRecord) {
     if (v !== 'time' && v !== 'logsState') {
       newState[v] = currentRecord[v];
@@ -418,31 +382,9 @@ function current (state) {
  * @param {String} query query will be matched with an state.
  * @return {object} refined query
  * */
-function refineQuery (agreementId, stateType, query) {
-  const refinedQuery = {};
-  refinedQuery.stateType = stateType;
-  refinedQuery.agreementId = agreementId;
-
-  if (query.scope) {
-    refinedQuery.scope = query.scope;
-  }
-
-  if (query.period) {
-    refinedQuery.period = query.period;
-  }
-
-  if (query.window) {
-    refinedQuery.window = query.window;
-  }
-
-  switch (stateType) {
-    case 'metrics':
-      refinedQuery.id = query.metric;
-      break;
-    case 'guarantees':
-      refinedQuery.id = query.guarantee;
-      break;
-  }
+function refineQuery(agreementId, stateType, query) {
+  const idProperties = { metrics: 'metric', guarantees: 'guarantee' };
+  const refinedQuery = { stateType, agreementId, ...query, id: query[idProperties[stateType]] };
   return refinedQuery;
 }
 
@@ -453,43 +395,26 @@ function refineQuery (agreementId, stateType, query) {
  * @param {String} query query will be matched with an state.
  * @return {String} mongo projection
  * */
-function projectionBuilder (stateType, query) {
-  const singular = {
-    guarantees: 'guarantee',
-    metrics: 'metric',
-    agreement: 'agreement'
-  };
-  const projection = {};
+function projectionBuilder(stateType, query) {
+  const singular = { guarantees: 'guarantee', metrics: 'metric', agreement: 'agreement' };
   const singularStateType = singular[stateType];
-  if (!singularStateType) {
-    return logger.error("projectionBuilder error: stateType '%s' is not expected", stateType);
-  }
 
-  let propValue = null;
-  let propName = null;
-  // iterate over element in the query (scope, period...)
-  for (const v in query) {
-    if (query[v] instanceof Object) {
-      const queryComponent = query[v];
-      // if it is an object we iterate over it (e.g. period.*)
-      for (const qC in queryComponent) {
-        propValue = null;
-        propName = v + '.' + qC;
-        propValue = queryComponent[qC];
-        if (propValue !== '*') {
-          projection[propName] = propValue;
+  if (!singularStateType) return logger.error(`projectionBuilder error: stateType '${stateType}' is not expected`);
+
+  let projection = {};
+  for (const [propName, propValue] of Object.entries(query)) {
+    if (typeof propValue === 'object') {
+      for (const [subPropName, subPropValue] of Object.entries(propValue)) {
+        if (subPropValue !== '*') {
+          const key = `${propName}.${subPropName}`;
+          projection[key] = subPropValue;
         }
       }
-    } else {
-      // if it is not an object we add it directly (e.g. guarantee.guarantee = "K01")
-      propValue = null;
-      propName = v;
-      propValue = query[v];
-      if (propValue !== '*') {
-        projection[propName] = propValue;
-      }
+    } else if (propValue !== '*') {
+      projection[propName] = propValue;
     }
   }
-  logger.debug('Mongo projection: ' + JSON.stringify(projection, null, 2));
+
+  logger.debug(`Mongo projection: ${JSON.stringify(projection, null, 2)}`);
   return projection;
 }

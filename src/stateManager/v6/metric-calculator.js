@@ -29,23 +29,21 @@ const logger = governify.getLogger().tag('metric-calculator');
 const Promise = require('bluebird');
 const JSONStream = require('JSONStream');
 
-const utils = require('../../utils');
-
-const Query = utils.Query;
-const promiseErrorHandler = utils.errors.promiseErrorHandler;
+import { parseToQueryParams } from '../../utils/query.js';
+import { handlePromiseError } from '../../utils/errors.js';
+import { computerToRegistryParser, registryToComputerParser } from '../../utils/scopes.js';
 
 /**
  * Metric calculator module.
  * @module metricCalculator
  * @requires config
  * @requires bluebird
- * @requires js-yaml
  * @requires request
  * @requires JSONStream
  * @see module:calculators
  * */
 module.exports = {
-  process: processMetric
+  processAllMetrics
 };
 
 /**
@@ -53,9 +51,9 @@ module.exports = {
  * @param {Object} agreement agreement
  * @param {Object} metricId metric ID
  * @param {Object} metricQuery metric query object
- * @alias module:metricCalculator.process
+ * @alias module:metricCalculator.processAllMetrics
  * */
-function processMetric (agreement, metricId, metricQuery) {
+function processAllMetrics(agreement, metricId, metricQuery) {
   return new Promise(async function (resolve, reject) {
     try {
       var metric = agreement.terms.metrics[metricId];
@@ -73,35 +71,6 @@ function processMetric (agreement, metricId, metricQuery) {
       if (metricQuery.evidences) {
         collectorQuery.evidences = metricQuery.evidences;
       }
-      // //Select logs data. If metric has not log, select by default log.
-      // var logDefinition, logId;
-      // if (metric.log) {
-      //     logId = Object.keys(metric.log)[0]; //control this potential error
-      //     if (!logId) { throw new Error('The log field of metric is not well defined in the agreement'); }
-      //     logDefinition = metric.log[logId];
-      // } else {
-      //     //Search default log
-      //     var agLogs = agreement.context.definitions.logs;
-      //     for (var l in agLogs) {
-      //         if (agLogs[l].default) {
-      //             logId = l;
-      //             logDefinition = agLogs[l];
-      //             break;
-      //         }
-      //     }
-      //     if (!logDefinition) { throw new Error('Agreement is not well defined. It Must has at least a default log.'); }
-      // }
-      // //Build logs field on computer request body //
-      // collectorQuery.logs = {};
-      // collectorQuery.logs[logId] = new LogField(
-      //     logDefinition.uri,
-      //     logDefinition.stateUri,1
-      //     logDefinition.terminator,
-      //     logDefinition.structure
-      // );
-
-      // Mapping of columns names in log
-      // var scope = utils.scopes.registryToComputerParser(metricQuery.scope, null);
 
       var scope = metricQuery.scope;
 
@@ -109,9 +78,6 @@ function processMetric (agreement, metricId, metricQuery) {
 
       if (collector.type === 'GET-V1') {
         logger.error('This registry version is not compatible with the collector type:', collector.type);
-        // TODO: To add compatibility for old collector versions (like collector-pivotal,collector-github), refactor the code to allow old GET collector types
-        // Old code for this implementation is available in the registry repository:
-        // https://github.com/governify/registry/blob/6b530bce8cf4c4bbf86a0c43a45b64753eb6a410/src/stateManager/v6/metric-calculator.js
         return resolve({});
       } else if (collector.type === 'POST-GET-V1') {
         metric.measure.scope = Object.keys(scope).length > 0 ? scope : metricQuery.scope;
@@ -124,12 +90,12 @@ function processMetric (agreement, metricId, metricQuery) {
         }
         ).catch(err => {
           const errorString = 'Error in Collector response ' + err.response.status + ':' + err.response.data;
-          return promiseErrorHandler(reject, 'metrics', processMetric.name, err.response.status, errorString);
+          return handlePromiseError(reject, 'metrics', processMetric.name, err.response.status, errorString);
         });
         const collectorResponse = requestMetric.data;
         const monthMetrics = await getComputationV2(collector.infrastructurePath, '/' + collectorResponse.computation.replace(/^\//, ''), 60000).catch(err => {
           const errorString = 'Error obtaining computation from computer: ' + metricId + '(' + err + ')';
-          return promiseErrorHandler(reject, 'metrics', processMetric.name, 500, errorString, err);
+          return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString, err);
         });
 
         try {
@@ -142,7 +108,7 @@ function processMetric (agreement, metricId, metricQuery) {
                 const logId = Object.keys(metricState.log)[0];
                 const log = agreement.context.definitions.logs[logId];
                 // doing scope mapping
-                metricState.scope = utils.scopes.computerToRegistryParser(metricState.scope, log.scopes);
+                metricState.scope = computerToRegistryParser(metricState.scope, log.scopes);
               }
               // aggregate metrics in order to return all
               compositeResponse.push(metricState);
@@ -155,11 +121,11 @@ function processMetric (agreement, metricId, metricQuery) {
             });
           } else {
             const errorString = 'Error in computer response for metric: ' + metricId + '. Response is not an array:  ' + JSON.stringify(monthMetrics);
-            return promiseErrorHandler(reject, 'metrics', processMetric.name, 500, errorString);
+            return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString);
           }
         } catch (err) {
           const errorString = 'Error processing computer response for metric: ' + metricId;
-          return promiseErrorHandler(reject, 'metrics', processMetric.name, 500, errorString, err);
+          return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString, err);
         }
       } else if (collector.type === 'PPINOT-V1') { // For ppinot collector
         var metric = agreement.terms.metrics[metricId];
@@ -206,7 +172,7 @@ function processMetric (agreement, metricId, metricQuery) {
         );
 
         // Mapping of columns names in log
-        var scope = utils.scopes.registryToComputerParser(metricQuery.scope, logDefinition.scopes);
+        var scope = registryToComputerParser(metricQuery.scope, logDefinition.scopes);
 
         // adding computer config
         collectorQuery.config = new Config(
@@ -218,13 +184,13 @@ function processMetric (agreement, metricId, metricQuery) {
 
         if (!collectorQuery.logs) {
           return reject('Log not found for metric ' + metricId + '. ' +
-                        'Please, specify metric log or default log.');
+            'Please, specify metric log or default log.');
         }
         collectorQuery.scope = Object.keys(scope).length > 0 ? scope : metricQuery.scope;
 
         // ### PREPARE REQUEST ###
         // Build URL query that will use on computer request
-        const urlParams = Query.parseToQueryParams(collectorQuery);
+        const urlParams = parseToQueryParams(collectorQuery);
         logger.debug('Sending URL params to computer:', urlParams);
         var compositeResponse = [];
         logger.info('Sending request to computer with params: %s', JSON.stringify(collectorQuery, null, 2));
@@ -236,7 +202,7 @@ function processMetric (agreement, metricId, metricQuery) {
           responseType: 'stream'
         }).catch(err => {
           const errorString = 'Error in PPINOT Computer response ' + err.response.status + ':' + err.response.data;
-          return promiseErrorHandler(reject, 'metrics', processMetric.name, err.response.status, errorString);
+          return handlePromiseError(reject, 'metrics', processMetric.name, err.response.status, errorString);
         });
         const requestStream = requestMetric.data;
         requestStream.pipe(JSONStream.parse()).on('data', monthMetrics => {
@@ -250,7 +216,7 @@ function processMetric (agreement, metricId, metricQuery) {
                   const logId = Object.keys(metricState.log)[0];
                   const log = agreement.context.definitions.logs[logId];
                   // doing scope mapping
-                  metricState.scope = utils.scopes.computerToRegistryParser(metricState.scope, log.scopes);
+                  metricState.scope = computerToRegistryParser(metricState.scope, log.scopes);
                 }
                 // aggregate metrics in order to return all
                 compositeResponse.push(metricState);
@@ -258,11 +224,11 @@ function processMetric (agreement, metricId, metricQuery) {
               logger.info('Mapping of columns names in log processed.');
             } else {
               const errorString = 'Error in computer response for metric: ' + metricId + '. Response is not an array:  ' + JSON.stringify(monthMetrics);
-              return promiseErrorHandler(reject, 'metrics', processMetric.name, 500, errorString);
+              return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString);
             }
           } catch (err) {
             const errorString = 'Error processing computer response for metric: ' + metricId;
-            return promiseErrorHandler(reject, 'metrics', processMetric.name, 500, errorString, err);
+            return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString, err);
           }
         }).on('end', function () {
           return resolve({
@@ -276,7 +242,7 @@ function processMetric (agreement, metricId, metricQuery) {
       }
     } catch (err) {
       const errorString = 'Error processing metric: ' + metricId + '(' + err + ')';
-      return promiseErrorHandler(reject, 'metrics', processMetric.name, 500, errorString, err);
+      return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString, err);
     }
   });
 }
@@ -286,7 +252,7 @@ function processMetric (agreement, metricId, metricQuery) {
  * @param {Object} computationId computation ID
  * @param {Object} timeout Time between retrying requests in milliseconds
  * */
-function getComputationV2 (infrastructurePath, computationURL, ttl) {
+function getComputationV2(infrastructurePath, computationURL, ttl) {
   return new Promise((resolve, reject) => {
     try {
       if (ttl < 0) { reject('Retries time surpased TTL.'); return; }
@@ -325,7 +291,7 @@ function getComputationV2 (infrastructurePath, computationURL, ttl) {
 
 // constructor of computer request config object
 class Config {
-  constructor (ptkey, schedules, holidays, measures) {
+  constructor(ptkey, schedules, holidays, measures) {
     this.measures = measures;
     this.ptkey = ptkey;
     this.schedules = schedules;
@@ -335,7 +301,7 @@ class Config {
 
 // constructor of computer request log object
 class LogField {
-  constructor (uri, stateUri, terminator, structure) {
+  constructor(uri, stateUri, terminator, structure) {
     if (!uri || !stateUri || !terminator || !structure) {
       throw new Error('The log field of metric is not well defined in the agreement, uri, stateUri, terminator and structure are required fields.');
     }

@@ -27,16 +27,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 const governify = require('governify-commons');
 const logger = governify.getLogger().tag('agreement-state-manager');
-const db = require('../../database');
-const stateManager = require('../../stateManager/v6/state-manager.js');
-const calculators = require('../../../../stateManager/v6/calculators.js');
 
-const Promise = require('bluebird');
-const request = require('request');
+const stateManager = require('../../stateManager/v6/state-manager.js');
 const JSONStream = require('JSONStream');
 
 import Agreement from '../../models/Agreement.js';
 import State from '../../models/State.js';
+import { metricQuery } from '../../utils/validators.js';
+import { processAgreement } from '../../stateManager/v6/agreement-calculator.js';
 
 /**
  * Agreement state module.
@@ -44,9 +42,6 @@ import State from '../../models/State.js';
  * @see module:states
  * @requires config
  * @requires stateManager
- * @requires calculators
- * @requires bluebird
- * @requires request
  * */
 module.exports = {
   // Agreement
@@ -150,7 +145,7 @@ async function getAllMetricsStates(req, res) {
     logger.info('Preparing requests to /states/' + agreementId + '/metrics/{metricId} : ');
     for (const [metricId, metricTerms] of Object.entries(manager.agreement.terms.metrics)) {
       const query = new Query(req.query);
-      const validation = utils.validators.metricQuery(query, metricId, metricTerms);
+      const validation = metricQuery(query, metricId, metricTerms);
 
       if (!validation.valid) {
         validation.metric = metricId;
@@ -182,24 +177,13 @@ async function getAllMetricsStates(req, res) {
  * @alias module:metrics.modifyMetricById
  * */
 async function getMetricStatesById(req, res) {
-  const { agreement: agreementId, metric: metricId } = req.swagger.params;
-  const query = new Query(req.query);
-
-  let result;
-  if (config.streaming) { // Hay que tener esto en cuenta. Me gustaría eliminar esta variable de configuración. En el método de arriba lo he eliminado.
-    logger.info('### Streaming mode ###');
-    res.setHeader('content-type', 'application/json; charset=utf-8');
-    result = utils.stream.createReadable();
-    result.pipe(JSONStream.stringify()).pipe(res);
-    return;
-  } else {
-    logger.info('### NO Streaming mode ###');
-    result = [];
-  }
-
   try {
+    const { agreement: agreementId, metric: metricId } = req.swagger.params;
+    const query = new Query(req.query);
+    let result = [];
+
     const manager = await stateManager({ id: agreementId });
-    const validation = utils.validators.metricQuery(query, metricId, manager.agreement.terms.metrics[metricId]);
+    const validation = metricQuery(query, metricId, manager.agreement.terms.metrics[metricId]);
 
     if (!validation.valid) {
       logger.warn('Validation error: ' + JSON.stringify(validation));
@@ -208,7 +192,7 @@ async function getMetricStatesById(req, res) {
     }
 
     const data = await manager.get('metrics', query);
-    if (config.streaming) { // Creo que esta comprobación está al revés, no sé si funciona bien siquiera.
+    if (config.streaming) { // Creo que esta comprobación está al revés.
       result = data.map((element) => manager.current(element));
     } else {
       data.forEach((element) => result.push(manager.current(element)));
@@ -218,7 +202,7 @@ async function getMetricStatesById(req, res) {
     res.json(result);
   } catch (err) {
     const errorString = `Error retrieving state values of metric: ${metricId}`;
-    controllerErrorHandler(res, 'metrics-controller', 'getMetricStatesById', 500, errorString, err);
+    handleControllerError(res, 'metrics-controller', 'getMetricStatesById', 500, errorString, err);
   }
 }
 
@@ -255,10 +239,10 @@ async function getAgreementsStatesFiltered(req, res) {
     const cursor = State.aggregate(pipeline).allowDiskUse(true).cursor();
 
     res.setHeader('content-type', 'application/json; charset=utf-8');
-    cursor.pipe(JSONStream.stringify()).pipe(res);
+    cursor.pipe(JSONStream.stringify()).pipe(res); // Modificar función para que no use JSONStream
   } catch (err) {
     logger.error(`Error retrieving filtered state values of agreements: ${err}`);
-    controllerErrorHandler(res, 'agreements-controller', 'getAgreementsStatesFiltered', 500, `Error retrieving filtered state values of agreements`, err);
+    handleControllerError(res, 'agreements-controller', 'getAgreementsStatesFiltered', 500, `Error retrieving filtered state values of agreements`, err);
   }
 }
 
@@ -303,7 +287,7 @@ async function recalculateAgreementStateById(req, res, next) {
 
     const manager = await stateManager({ id: agreementId });
     logger.info('Calculating agreement state...');
-    await calculators.agreementCalculator.process(manager, parameters.requestedState);
+    await processAgreement(manager, parameters.requestedState);
 
     logger.info('Agreement state recalculated successfully');
     res.send(`Agreement state for ID ${agreementId} has been reloaded successfully`);

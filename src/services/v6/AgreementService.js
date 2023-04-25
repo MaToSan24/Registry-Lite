@@ -29,11 +29,10 @@ const { getLogger } = require('governify-commons');
 const logger = getLogger().tag('agreement-manager');
 const $RefParser = require('json-schema-ref-parser');
 
-const ErrorModel = require('../../../errors/index.js').errorModel;
-
 import State from '../../models/State.js';
 import Agreement from '../../models/Agreement.js';
 import { deleteAgreementStatesById, deleteAllAgreementsStates } from './StateService.js';
+import ErrorModel from '../../utils/errors.js';
 
 /**
  * Registry agreement module.

@@ -28,25 +28,17 @@ const governify = require('governify-commons');
 const config = governify.configurator.getConfig('main');
 const logger = governify.getLogger().tag('db-manager');
 
-const jsyaml = require('js-yaml');
-const fs = require('fs');
-const mongoose = require('mongoose');
-const $RefParser = require('json-schema-ref-parser');
+import mongoose from 'mongoose';
 
 /**
  * Database module.
  * @module database
  * @requires config
- * @requires js-yaml
- * @requires fs
  * @requires mongoose
- * @requires json-schema-ref-parser
  * */
 module.exports = {
-  db: null,
-  models: null,
-  connect: _connect,
-  close: _close
+  connect,
+  close
 };
 
 /**
@@ -54,7 +46,7 @@ module.exports = {
  * @param {callback} callback callback connect function
  * @alias module:database.connect
  * */
-function _connect (callback) {
+function connect (callback) {
   const instance = this;
   let db = null;
   const options = {
@@ -85,7 +77,7 @@ function _connect (callback) {
  * @param {callback} done callback function when connection closes
  * @alias module:db.close
  * */
-function _close (done) {
+function close (done) {
   const instance = this;
   if (this.db) {
     this.db.close(function (err) {

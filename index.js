@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 const governify = require('governify-commons');
 const logger = governify.getLogger().tag('initialization');
 
+import { deploy } from './server';
+
 logger.info('Deploy request received');
 
 governify.init({
@@ -33,8 +35,7 @@ governify.init({
   }
   ]
 }).then(commonsMiddleware => {
-  const registry = require('./server.js');
-  registry.deploy(null, commonsMiddleware, function () {
+  deploy(null, commonsMiddleware, function () {
     logger.info('Deploy successfully done');
   });
 });

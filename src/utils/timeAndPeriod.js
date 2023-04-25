@@ -46,18 +46,12 @@ module.exports = {
  * @return {Set} set of periods
  * @alias module:utils.getPeriods
  * */
-function getPeriods (agreement, window) {
-  if (!window) {
-    window = {};
-  }
-
-  const from = new Date(window.initial ? window.initial : agreement.context.validity.initial);
+function getPeriods (agreement, window = {}) {
+  const from = new Date(window.initial || agreement.context.validity.initial);
   const to = new Date();
-
-  const Wfrom = new Date(window.from ? window.from : from);
+  const Wfrom = new Date(window.from || from);
   const Wto = window.end ? new Date(window.end) : new Date();
-
-  const dates = gPeriods.getDates(from, to, window.period ? window.period : 'monthly', Wto, window.rules);
+  const dates = gPeriods.getDates(from, to, window.period || 'monthly', Wto, window.rules);
   return gPeriods.getPeriods(dates, agreement.context.validity.timeZone, true, Wfrom, Wto);
 }
 
@@ -68,16 +62,11 @@ function getPeriods (agreement, window) {
  * @return {Set} set of periods
  * @alias module:utils.getLastPeriod
  * */
-function getLastPeriod (agreement, window) {
-  if (!window) {
-    window = {};
-  }
-
-  const from = new Date(window.initial ? window.initial : agreement.context.validity.initial);
+function getLastPeriod (agreement, window = {}) {
+  const from = new Date(window.initial || agreement.context.validity.initial);
   const to = new Date();
-
   const Wto = window.end ? new Date(window.end) : new Date();
-  return gPeriods.getLastPeriod(from, to, window.period ? window.period : 'monthly', Wto, window.rules, agreement.context.validity.timeZone);
+  return gPeriods.getLastPeriod(from, to, window.period || 'monthly', Wto, window.rules, agreement.context.validity.timeZone);
 }
 
 /**
