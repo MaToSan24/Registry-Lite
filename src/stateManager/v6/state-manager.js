@@ -29,13 +29,12 @@ const governify = require('governify-commons');
 const config = governify.configurator.getConfig('main');
 const logger = governify.getLogger().tag('state-manager');
 
-const db = require('../../database');
-const Promise = require('bluebird');
-
 import { processAgreement } from '../../stateManager/v6/agreement-calculator.js';
 import { processAllGuarantees } from '../../stateManager/v6/guarantee-calculator.js';
 import { processAllMetrics } from '../../stateManager/v6/metric-calculator.js';
-import { ErrorModel, handlePromiseError } from '../../utils/errors.js';
+import { ErrorModel } from '../../utils/errors.js';
+import Agreement from '../../models/Agreement.js';
+import State from '../../models/State.js';
 
 /**
  * State manager module.
@@ -50,45 +49,29 @@ module.exports = initialize;
 
 /**
  * Initialize the StateManager for an agreement.
- * @param {String} _agreement agreement ID
- * @return {Promise} Promise that will return a StateManager object
+ * @param {String} agreement agreement ID
  * @alias module:stateManager.initialize
  * */
-function initialize(_agreement) {
-  logger.debug('(initialize) Initializing state with agreement ID = ' + _agreement.id);
-  return new Promise(function (resolve, reject) {
-    const AgreementModel = db.models.AgreementModel;
-    logger.debug('Searching agreement with agreementID = ' + _agreement.id);
-    // Executes a mongodb query to search Agreement file with id = _agreement
-    AgreementModel.findOne({
-      id: _agreement.id
-    }, function (err, ag) {
-      if (err) {
-        // something fail on mongodb query and error is returned
-        logger.error(err.toString());
-        return reject(new ErrorModel(500, err));
-      } else {
-        if (!ag) {
-          // Not found agreement with id = _agreement
-          return reject(new ErrorModel(404, 'There is no agreement with id: ' + _agreement.id));
-        }
-        logger.debug('StateManager for agreementID = ' + _agreement.id + ' initialized');
-        // Building stateManager object with agreement definitions and stateManager method
-        // get ==> gets one or more states
-        // put ==> save an scoped state
-        // update ==> calculates one or more states and save them
-        // current ==> do a map over state an returns the current record for this state.
-        const stateManager = {
-          agreement: ag,
-          get,
-          put,
-          update,
-          current
-        };
-        return resolve(stateManager);
-      }
-    });
-  });
+async function initialize(agreement) {
+  try {
+    logger.debug(`(initialize) Initializing state with agreement ID = ${agreement.id}`);
+    const agreementDoc = await Agreement.findOne({ id: agreement.id });
+    if (!agreementDoc) throw new ErrorModel(404, `There is no agreement with id: ${agreement.id}`);
+    logger.debug(`StateManager for agreementID = ${agreement.id} initialized`);
+
+    const stateManager = {
+      agreement: agreementDoc,  // agreement ==> agreement definition
+      get,                      // get ==> gets one or more states
+      put,                      // put ==> save an scoped state
+      update,                   // update ==> calculates one or more states and save them
+      current,                  // current ==> returns the most recent record for this state along with some additional info about the state
+    };
+
+    return stateManager;
+  } catch (error) {
+    logger.error(error.toString());
+    throw new ErrorModel(500, error);
+  }
 }
 
 /**
@@ -96,53 +79,28 @@ function initialize(_agreement) {
  * @function get
  * @param {String} stateType enum: {guarantees, agreement, metrics}
  * @param {StateManagerQuery} query query will be matched with an state.
- * @return {Promise} Promise that will return an array of state objects
  * */
-function get(stateType, query, forceUpdate) {
+async function get(stateType, query = {}, forceUpdate) {
   const stateManager = this;
-  logger.debug('(GET) Retrieving state of ' + stateType + ' - ForceUpdate: ' + forceUpdate);
-  return new Promise(function (resolve, reject) {
-    logger.debug('Getting ' + stateType + ' state for query =  ' + JSON.stringify(query));
-    const StateModel = db.models.StateModel;
-    if (!query) {
-      query = {};
-    }
-    // Executes a mongodb query to search States file that match with query
-    // projectionBuilder(...) builds a mongodb query from StateManagerQuery
-    // refineQuery(...) ensures that the query is well formed, chooses and renames fields to make a well formed query.
-    StateModel.find(projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query)), function (err, result) {
-      if (err) {
-        // Something failed on mongodb query and error is returned
-        logger.debug(JSON.stringify(err));
-        return reject(new ErrorModel(500, 'Error while retrieving %s states: %s', stateType, err.toString()));
-      }
-      // If there are states in mongodb match the query, checks if it's updated and returns.
-      if (result.length > 0) {
-        logger.debug('There are ' + stateType + ' state for query =  ' + JSON.stringify(query) + ' in DB');
-        const states = result;
+  logger.debug(`(GET) Retrieving states of type '${stateType}' for query = ${JSON.stringify(query)} (ForceUpdate: ${forceUpdate})`);
 
-        logger.debug('Checking if ' + stateType + ' is updated...');
-        logger.debug("Updated: " + (data.isUpdated ? 'YES' : 'NO') + "[forceUpdate: " + forceUpdate + "]");
-        // States are updated, returns.
-        logger.debug('Refreshing states of ' + stateType);
-        stateManager.update(stateType, query, 0, forceUpdate).then(function (states) { // Change 0 with (data.logState) in case of using DB system.
-          return resolve(states);
-        }, function (err) {
-          return reject(err);
-        });
-      } else {
-        logger.debug('There are not ' + stateType + ' state for query =  ' + JSON.stringify(query) + ' in DB');
-        logger.debug('Adding states of ' + stateType);
-        stateManager.update(stateType, query, 0, forceUpdate).then(function (states) {
-          return resolve(states);
-        }).catch(function (err) {
-          const errorString = 'Error getting metrics';
-          return handlePromiseError(reject, 'state-manager', '_get', 500, errorString, err);
-        });
-      }
-    });
-  });
+  try {
+    // projectionBuilder(query) removes the fields whose values are "*" from the query
+    const result = await State.find(projectionBuilder({ agreementId: stateManager.agreement.id, stateType, ...query, id: query[stateType] }));
+
+    if (result.length > 0) {
+      logger.debug(`There are ${stateType} states for query = ${JSON.stringify(query)} in the database. Refreshing states...`);
+      return await stateManager.update(stateType, query, 0, forceUpdate);
+    } else {
+      logger.debug(`There are not ${stateType} states for query = ${JSON.stringify(query)} in the database. Adding states...`);
+      return await stateManager.update(stateType, query, 0, forceUpdate);
+    }
+  } catch (error) {
+    logger.debug("Error: ", error);
+    throw new ErrorModel(500, `Error while retrieving ${stateType} states: ${error.toString()}`);
+  }
 }
+
 
 /**
  * Add states with an specific query.
@@ -151,75 +109,33 @@ function get(stateType, query, forceUpdate) {
  * @param {StateManagerQuery} query query will be matched with an state.
  * @param {Object} value value
  * @param {Object} metadata {logsState, evidences, parameters}.
- * @return {Promise} Promise that will return an array of state objects
  * */
-function put(stateType, query, value, metadata) {
+async function put(stateType, query, value, metadata) {
   const stateManager = this;
-  logger.debug('(PUT) Saving state of ' + stateType);
-  return new Promise(function (resolve, reject) {
-    const StateModel = db.models.StateModel;
+  logger.debug(`(PUT) Saving state of ${stateType}`);
 
-    logger.debug('AGREEMENT: ' + stateManager.agreement.id);
-    const dbQuery = projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query));
-    logger.debug('Updating ' + stateType + ' state... with refinedQuery = ' + JSON.stringify(dbQuery, null, 2));
+  const refinedQuery = { agreementId: stateManager.agreement.id, stateType, ...query, id: query[stateType] };
+  const dbQuery = projectionBuilder(refinedQuery);
+  logger.debug(`Updating ${stateType} state with refinedQuery = ${JSON.stringify(dbQuery, null, 2)}`);
 
-    StateModel.update(dbQuery, {
-      $push: {
-        records: new Record(value, metadata)
-      }
-    }, function (err, result) {
-      if (err) {
-        logger.debug('Error, Is not possible to update state with this query = ' + JSON.stringify(query));
-        return reject(new ErrorModel(500, err));
-      } else {
-        logger.debug('NMODIFIED record:  ' + JSON.stringify(result));
+  try {
+    const record = { value, time: new Date().toISOString(), ...metadata };
+    const result = await State.updateMany(dbQuery, { $push: { records: record } });
+    logger.debug(`Updated record: ${JSON.stringify(result)}`);
 
-        let stateSignature = 'StateSignature (' + result.nModified + ') ' + '[';
-        for (const v in dbQuery) {
-          stateSignature += dbQuery[v];
-        }
-        stateSignature += ']';
-        logger.debug(stateSignature);
+    // Check if there is already a state
+    if (result.nModified === 0) {
+      logger.debug(`Creating new ${stateType} state with the record...`);
+      await State.create({ ...refinedQuery, records: [record] });
+    } else {
+      logger.debug(`Inserted new record of ${stateType} state.`);
+    }
 
-        // Check if there already is an state
-        if (result.nModified === 0) {
-          // There is no state for Guarantee / Metric , ....
-          logger.debug('Creating new ' + stateType + ' state with the record...');
-
-          const newState = new State(value, refineQuery(stateManager.agreement.id, stateType, query), metadata);
-          const stateModel = new StateModel(newState);
-
-          stateModel.save(newState, function (err) {
-            if (err) {
-              logger.error(err.toString());
-              return reject(new ErrorModel(500, err));
-            } else {
-              logger.debug('Inserted new Record in the new ' + stateType + ' state.');
-              StateModel.find(projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query)), function (err, result) {
-                if (err) {
-                  logger.error(err.toString());
-                  return reject(new ErrorModel(500, err));
-                }
-                return resolve(result);
-                //   }
-              });
-            }
-          });
-        } else {
-          // There is some state for Guarantee / Metric , ....
-          // Lets add a new Record.
-          logger.debug('Inserted new Record of ' + stateType + ' state.');
-          StateModel.find(projectionBuilder(stateType, refineQuery(stateManager.agreement.id, stateType, query)), function (err, result) {
-            if (err) {
-              logger.error(err.toString());
-              return reject(new ErrorModel(500, err));
-            }
-            return resolve(result);
-          });
-        }
-      }
-    });
-  });
+    return await State.find(dbQuery);
+  } catch (err) {
+    logger.debug(`Error. It is not possible to update state with this query = ${JSON.stringify(query)}`);
+    throw new ErrorModel(500, err);
+  }
 }
 
 /**
@@ -228,131 +144,56 @@ function put(stateType, query, value, metadata) {
  * @param {String} stateType enum: {guarantees, agreement, metrics}
  * @param {StateManagerQuery} query query will be matched with an state.
  * @param {Object} logsState logsState
- * @return {Promise} Promise that will return an array of state objects
  * */
-function update(stateType, query, logsState, forceUpdate) {
-  const stateManager = this;
-  logger.debug('(UPDATE) Updating state of ' + stateType);
-  return new Promise(function (resolve, reject) {
+async function update(stateType, query, logsState, forceUpdate) {
+  try {
+    const stateManager = this;
+    logger.debug(`(UPDATE) Updating state of ${stateType}`);
+
     switch (stateType) {
       case 'agreement':
-        processAgreement(stateManager)
-          .then(function (states) {
-            return resolve(states);
-          }, function (err) {
-            logger.error(err.toString());
-            return reject(new ErrorModel(500, err));
-          });
-        break;
+        return await processAgreement(stateManager);
+
       case 'guarantees':
-        const guaranteeDefinition = stateManager.agreement.terms.guarantees.find((e) => {
-          return query.guarantee === e.id;
+        const guaranteeStates = await processAllGuarantees(stateManager, query, forceUpdate);
+
+        const processGuarantees = guaranteeStates.guaranteeValues.map(guaranteeState => {
+          const state = { guarantee: query.guarantee, period: guaranteeState.period, scope: guaranteeState.scope };
+          const options = { metrics: guaranteeState.metrics, evidences: guaranteeState.evidences };
+          return stateManager.put(stateType, state, guaranteeState.value, options);
         });
-        processAllGuarantees(stateManager, query, forceUpdate)
-          .then(function (guaranteeStates) {
-            logger.debug('Guarantee states for ' + guaranteeStates.guaranteeId + ' have been calculated (' + guaranteeStates.guaranteeValues.length + ') ');
-            logger.debug('Guarantee states: ' + JSON.stringify(guaranteeStates, null, 2));
-            const processGuarantees = [];
-            guaranteeStates.guaranteeValues.forEach(function (guaranteeState) {
-              logger.debug('Guarantee state: ' + JSON.stringify(guaranteeState, null, 2));
-              processGuarantees.push(stateManager.put(stateType, {
-                guarantee: query.guarantee,
-                period: guaranteeState.period,
-                scope: guaranteeState.scope
-              }, guaranteeState.value, {
-                metrics: guaranteeState.metrics,
-                evidences: guaranteeState.evidences
-              }));
-            });
-            logger.debug('Created parameters array for saving states of guarantee of length ' + processGuarantees.length);
-            logger.debug('Persisting guarantee states...');
-            Promise.all(processGuarantees).then(function (guarantees) {
-              logger.debug('All guarantee states have been persisted');
-              const result = [];
-              for (const a in guarantees) {
-                result.push(guarantees[a][0]);
-              }
-              return resolve(result);
-            });
-          }).catch(function (err) {
-            logger.error(err);
-            const errorString = 'Error processing guarantees';
-            return handlePromiseError(reject, 'state-manager', '_update', 500, errorString, err);
-          });
-        // }
-        break;
+
+        logger.debug('Persisting guarantee states...');
+        const guarantees = await Promise.all(processGuarantees);
+        logger.debug('All guarantee states have been persisted');
+        return guarantees.map(guarantee => guarantee[0]);
+
       case 'metrics':
-        processAllMetrics(stateManager.agreement, query.metric, query)
-          .then(function (metricStates) {
-            logger.debug('Metric states for ' + metricStates.metricId + ' have been calculated (' + metricStates.metricValues.length + ') ');
-            const processMetrics = [];
-            metricStates.metricValues.forEach(function (metricValue) {
-              processMetrics.push(
-                stateManager.put(stateType, {
-                  metric: query.metric,
-                  scope: metricValue.scope,
-                  period: metricValue.period,
-                  window: query.window
-                }, metricValue.value, {
-                  evidences: metricValue.evidences,
-                  parameters: metricValue.parameters
-                }));
-            });
-            logger.debug('Created parameters array for saving states of metric of length ' + processMetrics.length);
-            logger.debug('Persisting metric states...');
-            return Promise.all(processMetrics).then(function (metrics) {
-              logger.debug('All metric states have been persisted');
-              const result = [];
-              for (const a in metrics) {
-                result.push(metrics[a][0]);
-              }
-              return resolve(result);
-            });
-          }).catch(function (err) {
-            const errorString = 'Error processing metrics';
-            return handlePromiseError(reject, 'state-manager', '_update', 500, errorString, err);
-          });
-        break;
+        const metricStates = await processAllMetrics(stateManager.agreement, query.metric, query);
+
+        const processMetrics = metricStates.metricValues.map(metricValue => {
+          const state = { metric: query.metric, scope: metricValue.scope, period: metricValue.period, window: query.window };
+          const options = { evidences: metricValue.evidences, parameters: metricValue.parameters };
+          return stateManager.put(stateType, state, metricValue.value, options);
+        });
+
+        logger.debug('Persisting metric states...');
+        const metrics = await Promise.all(processMetrics);
+        logger.debug('All metric states have been persisted');
+        return metrics.map(metric => metric[0]);
+
       default:
-        return reject(new ErrorModel(500, 'There are not method implemented to calculate ' + stateType + ' state'));
+        throw new ErrorModel(500, `There are no methods implemented to calculate ${stateType} state`);
     }
-  });
-}
-
-/**
- * State.
- * @function State
- * @param {Object} value value
- * @param {String} query query will be matched with an state.
- * @param {Object} metadata {logsState, evidences, parameters}
- * */
-function State(value, query, metadata) {
-  for (const v in query) {
-    this[v] = query[v];
-  }
-  this.records = [];
-  this.records.push(new Record(value, metadata));
-}
-
-/**
- * Record.
- * @function Record
- * @param {Object} value value
- * @param {Object} metadata {logsState, evidences, parameters}
- * */
-function Record(value, metadata) {
-  this.value = value;
-  this.time = new Date().toISOString();
-  if (metadata) {
-    for (const v in metadata) {
-      this[v] = metadata[v];
-    }
+  } catch (err) {
+    logger.error(err.toString());
+    throw new ErrorModel(500, err);
   }
 }
 
 /**
  * current.
- * @function _current
+ * @function current
  * @param {Object} state state
  * @return {object} state
  * */
@@ -376,45 +217,23 @@ function current(state) {
 
 /**
  * Refine the query for a search in database.
- * @function refineQuery
- * @param {String} agreementId agreementId
- * @param {String} stateType enum: {guarantees, agreement, metrics}
- * @param {String} query query will be matched with an state.
- * @return {object} refined query
- * */
-function refineQuery(agreementId, stateType, query) {
-  const idProperties = { metrics: 'metric', guarantees: 'guarantee' };
-  const refinedQuery = { stateType, agreementId, ...query, id: query[idProperties[stateType]] };
-  return refinedQuery;
-}
-
-/**
- * Refine the query for a search in database.
  * @function projectionBuilder
- * @param {String} stateType enum: {guarantees,  agreement, metrics}
- * @param {String} query query will be matched with an state.
+ * @param {String} query query that will be matched with an state.
  * @return {String} mongo projection
  * */
-function projectionBuilder(stateType, query) {
-  const singular = { guarantees: 'guarantee', metrics: 'metric', agreement: 'agreement' };
-  const singularStateType = singular[stateType];
-
-  if (!singularStateType) return logger.error(`projectionBuilder error: stateType '${stateType}' is not expected`);
-
-  let projection = {};
+function projectionBuilder(query) {
+  const filteredQuery = { ...query };
   for (const [propName, propValue] of Object.entries(query)) {
     if (typeof propValue === 'object') {
       for (const [subPropName, subPropValue] of Object.entries(propValue)) {
-        if (subPropValue !== '*') {
-          const key = `${propName}.${subPropName}`;
-          projection[key] = subPropValue;
+        if (subPropValue === '*') {
+          delete filteredQuery[propName][subPropName];
         }
       }
-    } else if (propValue !== '*') {
-      projection[propName] = propValue;
+    } else if (propValue === '*') {
+      delete filteredQuery[propName];
     }
   }
-
   logger.debug(`Mongo projection: ${JSON.stringify(projection, null, 2)}`);
-  return projection;
+  return filteredQuery;
 }
