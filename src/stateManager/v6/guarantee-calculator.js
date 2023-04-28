@@ -28,18 +28,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 const governify = require('governify-commons');
 const logger = governify.getLogger().tag('guarantee-calculator');
 
-const Promise = require('bluebird');
-const vm = require('vm');
-
-import { ErrorModel }  from '../../utils/errors.js';
-import { handlePromiseError } from '../../utils/errors.js';
-import { processSequentialPromises } from '../../utils/promise.js';
+import { handleError } from '../../utils/errors.js';
+import { processParallelPromises } from '../../utils/promise.js';
+import { isEqual } from 'lodash'
 
 /**
  * Guarantee calculator module.
  * @module guaranteeCalculator
  * @requires config
- * @requires vm
  * @see module:calculators
  * */
 module.exports = {
@@ -52,21 +48,15 @@ module.exports = {
  * @param {Object} agreement agreement
  * @alias module:guaranteeCalculator.processAllGuarantees
  * */
-function processAllGuarantees (agreement, forceUpdate) {
-  return new Promise(function (resolve, reject) {
-    const processGuarantees = [];
-
-    // processGuarantee is called for each guarantee of the agreement guarantees definition
-    agreement.terms.guarantees.forEach(function (guarantee) {
-      processGuarantees.push(processGuarantee(agreement, guarantee.id, true));
-    });
-
-    processSequentialPromises(null, processGuarantees, null, null)
-      .then(resolve)
-      .catch(function (err) {
-        return handlePromiseError(reject, 'guarantees', 'processAllGuarantees', 500, 'Error processing guarantees', err);
-      });
-  });
+async function processAllGuarantees(agreement, forceUpdate) {
+  try {
+    const guarantees = agreement.terms.guarantees.map((guarantee) =>
+      processGuarantee(agreement, guarantee.id, true)
+    );
+    return await processParallelPromises(null, guarantees);
+  } catch (err) {
+    throw handleError('guarantees', 'processAllGuarantees', 500, 'Error processing guarantees', err);
+  }
 }
 
 /**
@@ -76,195 +66,138 @@ function processAllGuarantees (agreement, forceUpdate) {
  * @param {Object} manager manager
  * @alias module:guaranteeCalculator.processGuarantee
  * */
-function processGuarantee (manager, query, forceUpdate) {
+async function processGuarantee(manager, query, forceUpdate) {
   const agreement = manager.agreement;
   const guaranteeId = query.guarantee;
 
-  return new Promise((resolve, reject) => {
-    logger.debug("Searching guarantee '%s' in array:\n %s", guaranteeId, JSON.stringify(agreement.terms.guarantees, null, 2));
+  const guarantee = agreement.terms.guarantees.find(guarantee => guarantee.id === guaranteeId);
+  if (!guarantee) throw new Error(`Guarantee ${guaranteeId} not found`);
 
-    // We retrieve the guarantee definition from the agreement that matches with the provided ID
-    const guarantee = agreement.terms.guarantees.find(function (guarantee) {
-      return guarantee.id === guaranteeId;
-    });
+  logger.debug(`Processing scoped guarantee (${guarantee.id}) with query: ${JSON.stringify(query, null, 2)}`);
 
-    logger.debug('Processing guarantee: ' + guaranteeId);
-    if (!guarantee) {
-      return handlePromiseError(reject, 'guarantees', 'processGuarantees', 404, 'Guarantee ' + guaranteeId + ' not found.');
-    }
-    // We prepare the parameters needed by the processScopedGuarantee function
-    const processScopedGuarantees = guarantee.of.reduce(function (acc, ofElement, index) {
-      if (query.period) {
-        logger.debug(index + '- ( processScopedGuarantee ) with query' + JSON.stringify(query, null, 2));
-        var auxProcessScopedGuarantees = [...acc];
-        auxProcessScopedGuarantees.push({
-          manager: manager,
-          query: query,
-          guarantee: guarantee,
-          ofElement: ofElement,
-          forceUpdate: forceUpdate
-        });
-      }
-      return auxProcessScopedGuarantees;
-    }, []);
-
-    let guaranteesValues = [];
-    logger.debug('Processing scoped guarantee (' + guarantee.id + ')...');
-    logger.debug('With query:  (' + JSON.stringify(query, null, 2) + ')...');
-    // processScopedGuarantee is called for each scope (priority, node, serviceLine, activity, etc.) of the guarantee
-
-    Promise.each(processScopedGuarantees, function (guaranteeParam) {
-      return processScopedGuarantee(guaranteeParam.manager, guaranteeParam.query, guaranteeParam.guarantee, guaranteeParam.ofElement, guaranteeParam.forceUpdate).then(function (value) {
+  const guaranteeValues = await Promise.all(
+    guarantee.of
+      .filter(ofElement => query.period)
+      .map(ofElement => processScopedGuarantee(manager, query, guarantee, ofElement, forceUpdate).then(value => {
         logger.debug('Scoped guarantee has been processed');
-        // Once we have calculated the scoped guarantee state, we add it to the array 'guaranteeValues'
-        guaranteesValues = guaranteesValues.concat(value);
-      });
-      // This catch will be controller by the each.catch in order to stop
-      // the execution when 1 promise fails
-    }).then(function () {
-      logger.debug('All scoped guarantees have been processed');
-      // Once we have calculated all scoped guarantees, we return guarantee ID and guarantee states values
-      return resolve({
-        guaranteeId: guaranteeId,
-        guaranteeValues: guaranteesValues
-      });
-    }).catch(function (err) {
-      return handlePromiseError(reject, 'guarantees', 'processGuarantee', 500, 'Error processing scoped guarantee for: ' + guarantee.id, err);
-    });
-  });
+        return value;
+      }).catch(err => {
+        throw new Error(`Error processing scoped guarantee for: ${guarantee.id}. ${err.message}`);
+      })
+      )
+  );
+
+  logger.debug('All scoped guarantees have been processed');
+  return { guaranteeId, guaranteeValues: guaranteeValues.flat() };
 }
 
 /**
- * Process a scoped guarantee.            // MODIFY METHOD IN ORDER TO REMOVE PENALTIES FROM THE CALCULATION
+ * Process a scoped guarantee.
  * @function processScopedGuarantee
  * @param {Object} agreement agreement
  * @param {Object} guarantee guarantee
  * @param {Object} ofElement of element
  * @param {Object} manager manager
  * */
-function processScopedGuarantee (manager, query, guarantee, ofElement, forceUpdate) {
-  try {
-    return new Promise((resolve, reject) => {
-      const agreement = manager.agreement;
+async function processScopedGuarantee(manager, query, guarantee, ofElement, forceUpdate) {
+  const agreement = manager.agreement;
+  const slo = ofElement.objective;
+  const penalties = ofElement.penalties;
 
-      // We retrieve the SLO from the scoped guarantee and the penalties to apply
-      const slo = ofElement.objective;
-      const penalties = ofElement.penalties;
-      const processMetrics = [];
-      // If some scope is not specified, we set it with default values
-      const scopeWithDefault = {};
-      const definedScopes = Object.keys(ofElement.scope || {});
-      for (const guaranteeScope in guarantee.scope) {
-        if (definedScopes.indexOf(guaranteeScope) > -1) {
-          scopeWithDefault[guaranteeScope] = ofElement.scope[guaranteeScope];
-        } else if (guarantee.scope[guaranteeScope].default) {
-          scopeWithDefault[guaranteeScope] = guarantee.scope[guaranteeScope].default;
-        }
-      }
-      // We collect the evidences that will be send to computer
-      const evidences = [];
-      if (ofElement.evidences) {
-        ofElement.evidences.forEach(function (evidence) {
-          const evidenceId = Object.keys(evidence)[0];
-          const evidenceComputer = evidence[evidenceId].computer;
-          if (evidenceComputer) {
-            evidences.push({
-              id: evidenceId,
-              computer: evidenceComputer.url.replace(/\/$/, '') + '/api/v' + evidenceComputer.apiVersion + '/' + evidenceComputer.name.replace(/^\//, '')
-            });
-          }
-        });
-      }
-      // We get the metrics to calculate from the with section of the scoped guarantee
-      if (ofElement.with) {
-        const window = ofElement.window;
-        window.initial = query.period.from;
-        if (query.period && query.period.to) {
-          window.end = query.period.to;
-        }
-        window.timeZone = agreement.context.validity.timeZone;
-        // For each metric, we create an object with the parameters needed by the manager to be able to calculate the metric state
-        for (const metricId in ofElement.with) {
-          processMetrics.push({
-            metric: metricId,
-            scope: scopeWithDefault,
-            parameters: ofElement.with[metricId],
-            evidences: evidences,
-            window: window,
-            period: {
-              from: query.period ? query.period.from : '*',
-              to: query.period ? query.period.to : '*'
-            },
-            forceUpdate: forceUpdate
-          });
-        }
-      }
-      // timedScope array will group all metric values by the same scope and period
-      // logger.warn("This scopedGuarantee need these metric: " + JSON.stringify(processMetrics, null, 2));
-      const timedScopes = [];
-      const metricValues = [];
-      logger.debug('Obtaining required metrics states for scoped guarantee ' + guarantee.id + '...');
-      Promise.each(processMetrics, function (metricParam) {
-        return manager.get('metrics', metricParam, metricParam.forceUpdate).then(function (scopedMetricValues) {
-          // Once we have all metrics involved in the scoped guarantee calculated...
-          if (scopedMetricValues.length > 0) {
-            logger.debug('Timed scoped metric values for ' + scopedMetricValues[0].id + ' has been calculated (' + scopedMetricValues.length + ') ');
-            logger.debug('Updating timed scope array for ' + scopedMetricValues[0].id + '...');
-            // For each scoped metric value...
-            scopedMetricValues.forEach(function (metricValue) {
-              const ts = {
-                scope: metricValue.scope,
-                period: metricValue.period
-              };
-              // We check if a timedScope exists
-              let tsIndex = timedScopes.findIndex(item => isEqual(item, ts))
-              if (tsIndex == -1) {
-                // If no exists, we create it
-                tsIndex = timedScopes.push(ts) - 1;
-                logger.debug('New TimedScope with index: ', tsIndex);
-              } else {
-                logger.debug('TimedScope already exists in array index: ', tsIndex);
-              }
+  // Collect the evidences that will be sent to computer
+  const evidences = ofElement.evidences.map(evidence => {
+    const evidenceId = Object.keys(evidence)[0];
+    const evidenceComputer = evidence[evidenceId].computer;
+    if (evidenceComputer) {
+      return {
+        id: evidenceId,
+        computer: evidenceComputer.url.replace(/\/$/, '') + '/api/v' + evidenceComputer.apiVersion + '/' + evidenceComputer.name.replace(/^\//, '')
+      };
+    }
+  });
 
-              // If array metricValues has no values for the index yet, we initialize it
-              if (metricValues[tsIndex] == null) {
-                metricValues[tsIndex] = {};
-              }
-              // Finally, we store current value (most recent value) of the metric
-              metricValues[tsIndex][metricValue.id] = manager.current(metricValue);
-            });
-            logger.debug('Timed scope array updated for ' + scopedMetricValues[0].id);
-            logger.debug('Timed scope: ' + JSON.stringify(timedScopes, null, 2));
-            logger.debug('Metric value: ' + JSON.stringify(metricValues, null, 2));
-          } else {
-            logger.debug('No metrics found for parameters: ' + JSON.stringify(metricParam, null, 2));
-          }
-        });
-        // This catch will be controller by the each.catch in order to stop
-        // the execution when 1 promise fails
-      }).then(function () {
-        const guaranteesValues = [];
-        logger.debug('Calculating penalties for scoped guarantee ' + guarantee.id + '...');
-        for (let index = 0; index < timedScopes.length; index++) {
-          const guaranteeValue = calculatePenalty(agreement, guarantee, ofElement, timedScopes[index], metricValues[index], slo, penalties);
-          if (guaranteeValue) {
-            guaranteesValues.push(guaranteeValue);
-          }
-        }
-        // Temporal fix
+  // If some scope is not specified, set it with the default values
+  const scope = Object.entries(guarantee.scope).reduce((acc, [scope, value]) => {
+    if (ofElement.scope && ofElement.scope[scope]) {
+      acc[scope] = ofElement.scope[scope];
+    } else if (value.default) {
+      acc[scope] = value.default;
+    }
+    return acc;
+  }, {});
 
-        logger.debug('All penalties for scoped guarantee ' + guarantee.id + ' calculated.');
-        logger.debug('Guarantees values: ' + JSON.stringify(guaranteesValues, null, 2));
-        return resolve(guaranteesValues);
-      }).catch(function (err) {
-        return handlePromiseError(reject, 'guarantees', 'processScopedGuarantee', 500, 'Error processing timedScopes metrics for guarantee: ' + guarantee.id, err);
-      });
+  /** Get the metrics that need to be calculated from the "with" section of the scoped guarantee
+  along with the parameters needed by the manager to calculate the metric state */
+  const neededMetrics = ofElement.with
+    ? Object.entries(ofElement.with).map(([metric, parameters]) => {
+      return {
+        metric,
+        scope,
+        parameters,
+        evidences,
+        window: {
+          ...ofElement.window,
+          initial: query.period.from,
+          end: query.period && query.period.to,
+          timeZone: agreement.context.validity.timeZone,
+        },
+        period: {
+          from: query.period ? query.period.from : '*',
+          to: query.period ? query.period.to : '*',
+        },
+        forceUpdate,
+      };
+    })
+    : [];
+
+  logger.debug(`Obtaining the states of the metrics needed to calculate the scoped guarantee of "${guarantee.id}"...`);
+
+  const metricStates = await Promise.all(
+    neededMetrics.map((neededMetric) =>
+      manager.get('metrics', neededMetric, neededMetric.forceUpdate).then((scopedMetricStates) => {
+        return scopedMetricStates.reduce((acc, metricState) => {
+          const ts = {
+            scope: metricState.scope,
+            period: metricState.period,
+          };
+
+          const tsIndex = acc.timedScopes.findIndex((item) => isEqual(item, ts));
+
+          if (tsIndex === -1) {
+            acc.timedScopes.push(ts);
+            acc.metricStates.push({});
+            acc.valueCount++;
+            tsIndex = acc.valueCount - 1;
+          }
+
+          acc.metricStates[tsIndex][metricState.id] = manager.current(metricState);
+          logger.debug('Timed scope array updated for ' + scopedMetricStates[0].id);
+          logger.debug('Timed scope: ' + JSON.stringify(acc.timedScopes[tsIndex], null, 2));
+          logger.debug('Metric value: ' + JSON.stringify(acc.metricStates[tsIndex], null, 2));
+
+          return acc;
+        }, { timedScopes: [], metricStates: [], valueCount: 0 });
+      }).catch((err) => {
+        return handleError('guarantees', 'processScopedGuarantee', 500, 'Error processing timedScopes metrics for guarantee: ' + guarantee.id, err);
+      })
+    )
+  );
+
+  const guaranteesValues = metricStates.reduce((acc, { timedScopes, metricStates }) => {
+    timedScopes.forEach((timedScope, index) => {
+      const guaranteeValue = evaluateGuarantee(guarantee, ofElement, timedScope, metricStates[index], slo);
+      if (guaranteeValue) {
+        acc.push(guaranteeValue);
+      }
     });
-  } catch (err) {
-    // Controlling errors that are not in promises
-    const error = new ErrorModel(500, '', err);
-    logger.error(error.toString());
-  }
+    return acc;
+  }, []);
+
+  logger.debug(`All scoped guarantees of "${guarantee.id}" have been processed`);
+  logger.debug('Guarantees values: ' + JSON.stringify(guaranteesValues, null, 2));
+
+
+  return guaranteesValues;
 }
 
 /**
@@ -274,61 +207,70 @@ function processScopedGuarantee (manager, query, guarantee, ofElement, forceUpda
  * @param {Object} guarantee guarantee
  * @param {Object} ofElement of element
  * @param {Object} timedScope timed scope
- * @param {Object} metricsValues metric values
+ * @param {Object} metricStates metric values
  * @param {Object} slo SLO
- * @param {Object} penalties penalties
  * */
-function calculatePenalty (agreement, guarantee, ofElement, timedScope, metricsValues, slo, penalties) {
-  const guaranteeValue = {};
-  guaranteeValue.scope = timedScope.scope;
-  guaranteeValue.period = timedScope.period;
-  guaranteeValue.guarantee = guarantee.id;
-  guaranteeValue.evidences = [];
-  guaranteeValue.metrics = {};
-  const values = [];
-  var penalties = {};// Temporal fix
+function evaluateGuarantee(guarantee, ofElement, timedScope, metricStates, slo) {
+  const guaranteeValue = {
+    scope: timedScope.scope,
+    period: timedScope.period,
+    guarantee: guarantee.id,
+    evidences: [],
+    metrics: {},
+  };
 
-  for (const metricId in ofElement.with) {
-    let value = 0;
-    if (metricsValues[metricId]) {
-      value = metricsValues[metricId].value;
+  const metricIds = Object.keys(ofElement.with);
+  const metricValues = {};
+
+  for (const metricId of metricIds) {
+    const metricState = metricStates[metricId];
+
+    if (!metricState) {
+      logger.warn(`No state found for metric "${metricId}". Skipping...`);
+      continue;
     }
+
+    const value = metricState.value;
+
     if (value === 'NaN' || value === '') {
-      logger.warn('Unexpected value (' + value + ') for metric ' + metricId + ' ');
-      return;
+      logger.warn(`Unexpected value ("${value}") for metric "${metricId}". Skipping...`);
+      continue;
     }
-    vm.runInThisContext(metricId + ' = ' + value);
-    guaranteeValue.metrics[metricId] = value;
-    if (metricsValues[metricId] && metricsValues[metricId].evidences) {
-      guaranteeValue.evidences = guaranteeValue.evidences.concat(metricsValues[metricId].evidences);
+
+    metricValues[metricId] = value;
+
+    if (metricState.evidences) {
+      guaranteeValue.evidences.push(...metricState.evidences);
     } else {
-      logger.warn('Metric without evidences: ' + JSON.stringify(metricsValues[metricId], null, 2));
+      logger.warn(`Metric "${metricId}" has no evidences.`);
     }
-
-    const val = {};
-    val[metricId] = value;
-    values.push(val);
   }
 
-  const fulfilled = Boolean(vm.runInThisContext(slo));
-  guaranteeValue.value = fulfilled;
+  const isFulfilled = evaluateSLO(slo, metricValues);
+  logger.debug(`Guarantee "${guarantee.id}" evaluated to "${isFulfilled ? 'fulfilled' : 'not fulfilled'}".`);
 
-  if (!fulfilled && penalties.length > 0) {
-    guaranteeValue.penalties = {};
-    penalties.forEach(function (penalty) {
-      const penaltyVar = Object.keys(penalty.over)[0];
-      const penaltyFulfilled = penalty.of.filter(function (compensationOf) {
-        return vm.runInThisContext(compensationOf.condition);
-      });
-      if (penaltyFulfilled.length > 0) {
-        guaranteeValue.penalties[penaltyVar] = parseFloat(vm.runInThisContext(penaltyFulfilled[0].value));
-      } else {
-        guaranteeValue.penalties[penaltyVar] = 0;
-        logger.error('SLO not fulfilled and no penalty found: ');
-        logger.error('\t- penalty: ', penalty.of);
-        logger.error('\t- metric value: ', values);
-      }
-    });
-  }
+  guaranteeValue.metrics = metricValues;
+  guaranteeValue.value = isFulfilled;
+
+  logger.debug(`Guarantee value: ${JSON.stringify(guaranteeValue, null, 2)}`);
+
   return guaranteeValue;
+}
+
+function evaluateSLO(slo, metricValues) {
+  // Substitute metric IDs with their values, join them with ';' and append the SLO.
+  const metricExpressions = Object.keys(metricValues).map(metricId => `${metricId}=${metricValues[metricId]}`);
+  const sloExpression = `${metricExpressions.join(';')};${slo}`;
+  let isFulfilled = false;
+
+  logger.debug(`Evaluating SLO expression: ${sloExpression}`);
+  
+  try {
+    // Evaluate the expression and return the result.
+    isFulfilled = Boolean(eval(sloExpression));
+  } catch (err) {
+    logger.error(`Error evaluating SLO expression: ${err}`);
+  }
+
+  return isFulfilled;
 }

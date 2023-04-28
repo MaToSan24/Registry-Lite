@@ -30,7 +30,7 @@ const config = governify.configurator.getConfig('main');
 const logger = governify.getLogger().tag('state-manager');
 
 import { processAgreement } from '../../stateManager/v6/agreement-calculator.js';
-import { processAllGuarantees } from '../../stateManager/v6/guarantee-calculator.js';
+import { processGuarantee } from '../../stateManager/v6/guarantee-calculator.js';
 import { processAllMetrics } from '../../stateManager/v6/metric-calculator.js';
 import { ErrorModel } from '../../utils/errors.js';
 import Agreement from '../../models/Agreement.js';
@@ -42,7 +42,6 @@ import State from '../../models/State.js';
  * @requires config
  * @requires database
  * @requires errors
- * @requires bluebird
  * @requires requestretry
  * */
 module.exports = initialize;
@@ -155,7 +154,7 @@ async function update(stateType, query, logsState, forceUpdate) {
         return await processAgreement(stateManager);
 
       case 'guarantees':
-        const guaranteeStates = await processAllGuarantees(stateManager, query, forceUpdate);
+        const guaranteeStates = await processGuarantee(stateManager, query, forceUpdate);
 
         const processGuarantees = guaranteeStates.guaranteeValues.map(guaranteeState => {
           const state = { guarantee: query.guarantee, period: guaranteeState.period, scope: guaranteeState.scope };

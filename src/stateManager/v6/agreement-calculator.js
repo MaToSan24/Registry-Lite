@@ -37,7 +37,6 @@ import moment from 'moment-timezone';
  * Agreement calculator module.
  * @module agreementCalculator
  * @requires config
- * @requires bluebird
  * @see module:calculators
  * */
 module.exports = {

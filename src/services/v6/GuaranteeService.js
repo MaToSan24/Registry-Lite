@@ -29,21 +29,18 @@ const config = governify.configurator.getConfig('main');
 const logger = governify.getLogger().tag('guarantees');
 
 const stateManager = require('../../stateManager/v6/state-manager');
-const Promise = require('bluebird');
 
 import { ErrorModel, handleControllerError } from '../../utils/errors.js';
-import Query from '../../utils/query.js';
-import State from '../../models/State.js';
 import { guaranteeQuery } from '../../utils/validators.js';
 import { processSequentialPromises } from '../../utils/promise.js';
 import { getPeriods, getLastPeriod } from '../../utils/timeAndPeriod.js';
+import State from '../../models/State.js';
 
 /**
  * Guarantees module
  * @module guarantees
  * @see module:states
  * @requires config
- * @requires bluebird
  * @requires errors
  * @requires stateManager
  * */

@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 'use strict';
 const governify = require('governify-commons');
 const logger = governify.getLogger().tag('metric-calculator');
-const Promise = require('bluebird');
 const JSONStream = require('JSONStream');
 
 import { parseToQueryParams } from '../../utils/query.js';
@@ -37,7 +36,6 @@ import { computerToRegistryParser, registryToComputerParser } from '../../utils/
  * Metric calculator module.
  * @module metricCalculator
  * @requires config
- * @requires bluebird
  * @requires request
  * @requires JSONStream
  * @see module:calculators

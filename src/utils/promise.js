@@ -24,12 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 'use strict';
-const Promise = require('bluebird');
 const governify = require('governify-commons');
 const logger = governify.getLogger().tag('promise-manager');
 
-
-import { handlePromiseError } from './errors.js';
 import { handleError } from './errors.js';
 /**
  * Utils module.
@@ -39,7 +36,8 @@ import { handleError } from './errors.js';
  * */
 
 module.exports = {
-  processSequentialPromises
+  processSequentialPromises,
+  processParallelPromises
 };
 
 /**
@@ -59,6 +57,69 @@ async function processSequentialPromises(type, manager, queries, forceUpdate) {
     }
     return result;
   } catch (error) {
+    logger.error(`(processSequentialPromises) Error processing sequential promises: ${error}`);
     throw handleError('promise', 'processSequentialPromises', 500, 'Error processing sequential promises', error);
+  }
+}
+
+/**
+ * Process mode.
+ * @param {StateManager} manager StateManager instance
+ * @param {Array} promisesArray array of promises to processing
+ * @param {Object} result Array or stream with the result
+ * @param {ResponseObject} res To respond the request
+ * @param {Boolean} streaming Decide if stream or not stream response
+ * @alias module:gUtils.processMode
+ * */
+function processParallelPromises(manager, promisesArray, result, res, streaming) {
+  result = [];
+
+  return new Promise(function (resolve, reject) {
+    Promise.settle(promisesArray).then(function (promisesResults) {
+      try {
+        if (promisesResults.length > 0) {
+          for (const r in promisesResults) {
+            const onePromiseResults = promisesResults[r];
+            if (onePromiseResults.isFulfilled()) {
+              onePromiseResults.value().forEach(function (value) {
+                if (manager) {
+                  result.push(manager.current(value));
+                } else {
+                  result.push(value);
+                }
+              });
+            }
+          }
+          resolve(result);
+        } else {
+          const err = 'Error processing Promises: empty result';
+          logger.error(err);
+          reject(err.toString());
+        }
+      } catch (err) {
+        logger.error(err);
+        reject(err.toString());
+      }
+    }, function (err) {
+      logger.error(err);
+      reject(err.toString());
+    });
+  });
+}
+
+async function processParallelPromises(manager, promisesArray) {
+  try {
+    const settledPromises = await Promise.allSettled(promisesArray);
+    const results = settledPromises
+      .filter(p => p.status === 'fulfilled')
+      .flatMap(p => p.value)
+      .map(value => manager ? manager.current(value) : value);
+
+    if (results.length === 0) throw new Error('Error processing Promises: empty result');
+
+    return results;
+  } catch (error) {
+    logger.error(error);
+    throw error;
   }
 }

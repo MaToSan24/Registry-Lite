@@ -38,7 +38,6 @@ const stateManager = require('../../stateManager/v6/state-manager.js');
  * @module metrics
  * @see module:states
  * @requires config
- * @requires bluebird
  * @requires errors
  * @requires stateManager
  * */
