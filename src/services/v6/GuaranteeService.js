@@ -46,7 +46,7 @@ import State from '../../models/State.js';
  * */
 module.exports = {
   getGuarantees,
-  getAllGuarantees,
+  getGuaranteesByAgreementId,
   getGuaranteeById,
 };
 
@@ -93,13 +93,13 @@ async function getGuarantees(agreementId, guaranteeId, dateRange, forceUpdate) {
 }
 
 /**
- * Get all guarantees.
+ * Get guarantees for a given agreement ID within a specific date range.
  * @param {Object} args {agreement: String, from: String, to: String}
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:guarantees.getAllGuarantees
+ * @alias module:guarantees.getGuaranteesByAgreementId
  * */
-async function getAllGuarantees(req, res) {
+async function getGuaranteesByAgreementId(req, res) {
   try {
     const agreementId = req.swagger.params.agreement.value;
     const { from, to, forceUpdate } = req.query;
@@ -110,7 +110,7 @@ async function getAllGuarantees(req, res) {
     logger.info(`New request to GET guarantees - With new periods from guarantees: ${newPeriodsFromGuarantees}`);
     const manager = await stateManager({ id: agreementId });
     logger.info('Getting state of guarantees...');
-    const queries = getGuaranteesQueries(manager, req.query, validationErrors, from, to, lastPeriod, newPeriodsFromGuarantees);
+    const queries = getGuaranteesQueries(manager, validationErrors, from, to, lastPeriod, newPeriodsFromGuarantees);
 
     if (validationErrors.length > 0) {
       logger.error('Error while getting guarantees: ' + JSON.stringify(validationErrors));
@@ -125,11 +125,10 @@ async function getAllGuarantees(req, res) {
   }
 }
 
-// Helper function for getAllGuarantees
-function getGuaranteesQueries(manager, query, validationErrors, from, to, lastPeriod, newPeriodsFromGuarantees) {
+// Helper function for getGuaranteesByAgreementId
+function getGuaranteesQueries(manager, validationErrors, from, to, lastPeriod, newPeriodsFromGuarantees) {
   return manager.agreement.terms.guarantees.reduce((queries, guarantee) => {
-    const guaranteeDefinition = manager.agreement.terms.guarantees.find(e => e.id === guarantee.id);
-    const requestWindow = guaranteeDefinition.of[0].window;
+    const requestWindow = guarantee.of[0].window;
 
     let allQueries = [];
     if (from && to) {

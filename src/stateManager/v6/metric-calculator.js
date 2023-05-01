@@ -26,11 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 'use strict';
 const governify = require('governify-commons');
 const logger = governify.getLogger().tag('metric-calculator');
-const JSONStream = require('JSONStream');
 
-import { parseToQueryParams } from '../../utils/query.js';
-import { handlePromiseError } from '../../utils/errors.js';
-import { computerToRegistryParser, registryToComputerParser } from '../../utils/scopes.js';
+import { handleError } from '../../utils/errors.js';
 
 /**
  * Metric calculator module.
@@ -51,198 +48,37 @@ module.exports = {
  * @param {Object} metricQuery metric query object
  * @alias module:metricCalculator.processAllMetrics
  * */
-function processAllMetrics(agreement, metricId, metricQuery) {
-  return new Promise(async function (resolve, reject) {
-    try {
-      var metric = agreement.terms.metrics[metricId];
-      if (!metric) {
-        return reject('Metric ' + metricId + ' not found.');
-      }
-
-      const collector = metric.collector;
-
-      /** ### BUILD COMPUTER REQUEST QUERY ###**/
-      var collectorQuery = {};
-      collectorQuery.parameters = metricQuery.parameters;
-      collectorQuery.window = metricQuery.window;
-
-      if (metricQuery.evidences) {
-        collectorQuery.evidences = metricQuery.evidences;
-      }
-
-      var scope = metricQuery.scope;
-
-      logger.info('Using collector type: ' + collector.type);
-
-      if (collector.type === 'GET-V1') {
-        logger.error('This registry version is not compatible with the collector type:', collector.type);
-        return resolve({});
-      } else if (collector.type === 'POST-GET-V1') {
-        metric.measure.scope = Object.keys(scope).length > 0 ? scope : metricQuery.scope;
-        metric.measure.window = metricQuery.window;
-        var compositeResponse = [];
-        const requestMetric = await governify.infrastructure.getService(collector.infrastructurePath).request({
-          url: collector.endpoint,
-          method: 'POST',
-          data: { config: collector.config, metric: metric.measure }
-        }
-        ).catch(err => {
-          const errorString = 'Error in Collector response ' + err.response.status + ':' + err.response.data;
-          return handlePromiseError(reject, 'metrics', processMetric.name, err.response.status, errorString);
-        });
-        const collectorResponse = requestMetric.data;
-        const monthMetrics = await getComputationV2(collector.infrastructurePath, '/' + collectorResponse.computation.replace(/^\//, ''), 60000).catch(err => {
-          const errorString = 'Error obtaining computation from computer: ' + metricId + '(' + err + ')';
-          return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString, err);
-        });
-
-        try {
-          // Check if computer response is correct
-          if (monthMetrics && Array.isArray(monthMetrics)) {
-            // For each state returned by computer map the scope
-            monthMetrics.forEach(function (metricState) {
-              if (metricState.log && metric.scope) {
-                // Getting the correct log for mapping scope
-                const logId = Object.keys(metricState.log)[0];
-                const log = agreement.context.definitions.logs[logId];
-                // doing scope mapping
-                metricState.scope = computerToRegistryParser(metricState.scope, log.scopes);
-              }
-              // aggregate metrics in order to return all
-              compositeResponse.push(metricState);
-            });
-            logger.info('Mapping of columns names in log processed.');
-
-            return resolve({
-              metricId: metricId,
-              metricValues: compositeResponse
-            });
-          } else {
-            const errorString = 'Error in computer response for metric: ' + metricId + '. Response is not an array:  ' + JSON.stringify(monthMetrics);
-            return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString);
-          }
-        } catch (err) {
-          const errorString = 'Error processing computer response for metric: ' + metricId;
-          return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString, err);
-        }
-      } else if (collector.type === 'PPINOT-V1') { // For ppinot collector
-        var metric = agreement.terms.metrics[metricId];
-        if (!metric) {
-          return reject('Metric ' + metricId + ' not found.');
-        }
-
-        const metricCollectorObject = metric.collector;
-
-        /** ### BUILD COMPUTER REQUEST QUERY ###**/
-        var collectorQuery = {};
-        collectorQuery.parameters = metricQuery.parameters;
-        collectorQuery.window = metricQuery.window;
-
-        if (metricQuery.evidences) {
-          collectorQuery.evidences = metricQuery.evidences;
-        }
-
-        // Select logs data. If metric has not log, select by default log.
-        let logDefinition, logId;
-        if (metric.log) {
-          logId = Object.keys(metric.log)[0]; // control this potential error
-          if (!logId) { throw new Error('The log field of metric is not well defined in the agreement'); }
-          logDefinition = metric.log[logId];
-        } else {
-          // Search default log
-          const agLogs = agreement.context.definitions.logs;
-          for (const l in agLogs) {
-            if (agLogs[l].default) {
-              logId = l;
-              logDefinition = agLogs[l];
-              break;
-            }
-          }
-          if (!logDefinition) { throw new Error('Agreement is not well defined. It Must has at least a default log.'); }
-        }
-        // Build logs field on computer request body //
-        collectorQuery.logs = {};
-        collectorQuery.logs[logId] = new LogField(
-          logDefinition.uri,
-          logDefinition.stateUri,
-          logDefinition.terminator,
-          logDefinition.structure
-        );
-
-        // Mapping of columns names in log
-        var scope = registryToComputerParser(metricQuery.scope, logDefinition.scopes);
-
-        // adding computer config
-        collectorQuery.config = new Config(
-          '',
-          metricCollectorObject.config.schedules,
-          metricCollectorObject.config.holidays || null,
-          metricCollectorObject.config.measures
-        );
-
-        if (!collectorQuery.logs) {
-          return reject('Log not found for metric ' + metricId + '. ' +
-            'Please, specify metric log or default log.');
-        }
-        collectorQuery.scope = Object.keys(scope).length > 0 ? scope : metricQuery.scope;
-
-        // ### PREPARE REQUEST ###
-        // Build URL query that will use on computer request
-        const urlParams = parseToQueryParams(collectorQuery);
-        logger.debug('Sending URL params to computer:', urlParams);
-        var compositeResponse = [];
-        logger.info('Sending request to computer with params: %s', JSON.stringify(collectorQuery, null, 2));
-        // Build and send computer request
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-        const requestMetric = await governify.infrastructure.getService(collector.infrastructurePath).request({
-          url: collector.endpoint + '/' + metricCollectorObject.name.replace(/^\//, '') + '?' + encodeURI(urlParams),
-          method: 'GET',
-          responseType: 'stream'
-        }).catch(err => {
-          const errorString = 'Error in PPINOT Computer response ' + err.response.status + ':' + err.response.data;
-          return handlePromiseError(reject, 'metrics', processMetric.name, err.response.status, errorString);
-        });
-        const requestStream = requestMetric.data;
-        requestStream.pipe(JSONStream.parse()).on('data', monthMetrics => {
-          try {
-            // Check if computer response is correct
-            if (monthMetrics && Array.isArray(monthMetrics)) {
-              // For each state returned by computer map the scope
-              monthMetrics.forEach(function (metricState) {
-                if (metricState.log && metric.scope) {
-                  // Getting the correct log for mapping scope
-                  const logId = Object.keys(metricState.log)[0];
-                  const log = agreement.context.definitions.logs[logId];
-                  // doing scope mapping
-                  metricState.scope = computerToRegistryParser(metricState.scope, log.scopes);
-                }
-                // aggregate metrics in order to return all
-                compositeResponse.push(metricState);
-              });
-              logger.info('Mapping of columns names in log processed.');
-            } else {
-              const errorString = 'Error in computer response for metric: ' + metricId + '. Response is not an array:  ' + JSON.stringify(monthMetrics);
-              return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString);
-            }
-          } catch (err) {
-            const errorString = 'Error processing computer response for metric: ' + metricId;
-            return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString, err);
-          }
-        }).on('end', function () {
-          return resolve({
-            metricId: metricId,
-            metricValues: compositeResponse
-          });
-        });
-      } else {
-        console.error('This registry does not implement the collector type:', collector.type);
-        return resolve({});
-      }
-    } catch (err) {
-      const errorString = 'Error processing metric: ' + metricId + '(' + err + ')';
-      return handlePromiseError(reject, 'metrics', processMetric.name, 500, errorString, err);
+async function processAllMetrics(agreement, metricId) {
+  try {
+    const metric = agreement.terms.metrics[metricId];
+    if (!metric) {
+      throw handleError('metrics', 'processAllMetrics', 404, `Metric '${metricId}' not found.`)
     }
-  });
+
+    const collector = metric.collector;
+    logger.info(`Using collector type: ${collector.type}`);
+
+    if (collector.type !== 'POST-GET-V1') {
+      console.error(`This Registry does not implement the collector type: ${collector.type}`);
+      return {};
+    }
+
+    const metricRequest = await governify.infrastructure.getService(collector.infrastructurePath).request({
+      url: collector.endpoint,
+      method: 'POST',
+      data: { config: collector.config, metric: metric.measure }
+    });
+
+    const computationResults = await getComputationV2(collector.infrastructurePath, `/${metricRequest.data.computation.replace(/^\//, '')}`, 60000);
+
+    if (!Array.isArray(computationResults)) {
+      throw handleError('metrics', 'processAllMetrics', 500, `Error in computer response for metric: ${metricId}. Response is not an array: ${JSON.stringify(monthMetrics)}`);
+    }
+
+    return { metricId, metricValues: computationResults };
+  } catch (err) {
+    throw handleError('metrics', 'processAllMetrics', 500, `Error processing computer response for metric: ${metricId}`, err);
+  }
 }
 
 /**
@@ -250,62 +86,34 @@ function processAllMetrics(agreement, metricId, metricQuery) {
  * @param {Object} computationId computation ID
  * @param {Object} timeout Time between retrying requests in milliseconds
  * */
-function getComputationV2(infrastructurePath, computationURL, ttl) {
-  return new Promise((resolve, reject) => {
-    try {
-      if (ttl < 0) { reject('Retries time surpased TTL.'); return; }
-      const realTimeout = 1000; // Minimum = firstTimeout
-      const firstTimeout = 500;
-      setTimeout(async () => {
-        governify.infrastructure.getService(infrastructurePath).get(computationURL).then(response => {
-          if (response.status === 202) {
-            logger.info('Computation ' + computationURL.split('/').pop + ' not ready jet. Retrying in ' + realTimeout + ' ms.');
-            setTimeout(() => {
-              resolve(getComputationV2(infrastructurePath, computationURL, ttl - realTimeout));
-            }, realTimeout - firstTimeout);
-          } else if (response.status === 200) {
-            resolve(response.data.computations);
-          } else {
-            // FIXME - Not returning response
-            reject(new Error('Invalid response status from collector. Response: \n', response));
-          }
-        }).catch(err => {
-          if (err?.response?.status === 400) {
-            logger.error('Failed obtaining computations from collector: ' + err.response.data.errorMessage + '\nCollector used: ' + infrastructurePath + '\nEndpoint: ' + computationURL);
-            resolve([]);
-          } else {
-            logger.error('Error when obtaining computation response from collector: ', infrastructurePath, ' - ComputationURL: ', computationURL, '- ERROR: ', err);
-            reject(err);
-          }
-        });
-      }, firstTimeout);
-    } catch (err) {
-      reject(err);
+async function getComputationV2(infrastructurePath, computationURL, ttl) {
+  const RETRY_TIMEOUT = 1000;
+
+  try {
+    if (ttl < 0) {
+      throw handleError('metrics', 'getComputationV2', 500, 'Retries time surpassed TTL.');
     }
-  });
-}
 
-// ### OBJECTS CONSTRUCTORS ###
+    const response = await governify.infrastructure.getService(infrastructurePath).get(computationURL);
 
-// constructor of computer request config object
-class Config {
-  constructor(ptkey, schedules, holidays, measures) {
-    this.measures = measures;
-    this.ptkey = ptkey;
-    this.schedules = schedules;
-    this.holidays = holidays;
-  }
-}
-
-// constructor of computer request log object
-class LogField {
-  constructor(uri, stateUri, terminator, structure) {
-    if (!uri || !stateUri || !terminator || !structure) {
-      throw new Error('The log field of metric is not well defined in the agreement, uri, stateUri, terminator and structure are required fields.');
+    if (response.status === 200) {
+      return response.data.computations;
     }
-    this.uri = uri;
-    this.stateUri = stateUri;
-    this.terminator = terminator;
-    this.structure = structure;
+
+    if (response.status === 202) {
+      console.log(`Computation ${computationURL.split('/').pop()} not ready yet. Retrying in ${RETRY_TIMEOUT}ms.`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_TIMEOUT));
+      return getComputationV2(infrastructurePath, computationURL, ttl - RETRY_TIMEOUT);
+    }
+
+    throw handleError('metrics', 'getComputationV2', 500, 'Invalid response status from collector', response);
+  } catch (err) {
+    if (err?.response?.status === 400) {
+      console.error(`Failed obtaining computations from collector: ${err.response.data.errorMessage}\nCollector used: ${infrastructurePath}\nEndpoint: ${computationURL}`);
+      return [];
+    }
+
+    console.error(`Error when obtaining computation response from collector: ${infrastructurePath} - ComputationURL: ${computationURL} - ERROR: ${err}`);
+    throw handleError('metrics', 'getComputationV2', 500, 'Error obtaining computation response from collector', err);
   }
 }

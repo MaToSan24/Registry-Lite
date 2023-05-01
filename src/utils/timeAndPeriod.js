@@ -36,7 +36,7 @@ const gPeriods = governify.periods;
 module.exports = {
   getPeriods,
   getLastPeriod,
-  periods: periods
+  periods
 };
 
 /**

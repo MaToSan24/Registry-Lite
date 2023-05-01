@@ -20,6 +20,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 'use strict';
 
+import http from 'http'; // Use http if your app will be behind a proxy.
+import https from 'https'; // Use https if your app will not be behind a proxy.
+import bodyParser from 'body-parser';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import fs from 'fs';
+import path from 'path';
+
 import { getSwaggerDoc, initializeMiddleware } from './src/utils/swagger.js';
 import { stateInProgress } from './src/utils/middlewares.js';
 import { connect, close } from './src/database/index.js';
@@ -50,16 +60,6 @@ function deploy(configurations, commonsMiddleware, callback) {
   const governify = require('governify-commons');
   const config = governify.configurator.getConfig('main');
   const logger = governify.getLogger().tag('deploy');
-
-  const http = require('http'); // Use http if your app will be behind a proxy.
-  const https = require('https'); // Use https if your app will not be behind a proxy.
-  const bodyParser = require('body-parser');
-  const express = require('express');
-  const cors = require('cors');
-  const helmet = require('helmet');
-  const compression = require('compression');
-  const fs = require('fs');
-  const path = require('path');
 
   const app = express();
   const server = null;

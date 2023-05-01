@@ -249,9 +249,9 @@ paths:
   '/states/{agreement}/guarantees':
     get:
       tags:
-        - StateController
+        - GuaranteeController
       description: XXX
-      operationId: getAllGuarantees
+      operationId: getGuaranteesByAgreementId
       parameters:
         - name: agreement
           in: path
@@ -269,7 +269,7 @@ paths:
           description: Bad request
           schema:
             $ref: '#/definitions/error_model'
-      x-swagger-router-controller: StateController
+      x-swagger-router-controller: GuaranteeController
   '/states/{agreement}/guarantees/{guarantee}':
     get:
       tags:

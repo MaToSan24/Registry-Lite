@@ -39,7 +39,6 @@ import ErrorModel from '../../utils/errors.js';
  * @module agreements
  * @see module:AgreementController
  * @see module:AgreementService
- * @requires config
  * @requires database
  * @requires StateService
  * @requires errors

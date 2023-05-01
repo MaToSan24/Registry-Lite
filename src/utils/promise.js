@@ -69,44 +69,8 @@ async function processSequentialPromises(type, manager, queries, forceUpdate) {
  * @param {Object} result Array or stream with the result
  * @param {ResponseObject} res To respond the request
  * @param {Boolean} streaming Decide if stream or not stream response
- * @alias module:gUtils.processMode
+ * @alias module:promise.processParallelPromises
  * */
-function processParallelPromises(manager, promisesArray, result, res, streaming) {
-  result = [];
-
-  return new Promise(function (resolve, reject) {
-    Promise.settle(promisesArray).then(function (promisesResults) {
-      try {
-        if (promisesResults.length > 0) {
-          for (const r in promisesResults) {
-            const onePromiseResults = promisesResults[r];
-            if (onePromiseResults.isFulfilled()) {
-              onePromiseResults.value().forEach(function (value) {
-                if (manager) {
-                  result.push(manager.current(value));
-                } else {
-                  result.push(value);
-                }
-              });
-            }
-          }
-          resolve(result);
-        } else {
-          const err = 'Error processing Promises: empty result';
-          logger.error(err);
-          reject(err.toString());
-        }
-      } catch (err) {
-        logger.error(err);
-        reject(err.toString());
-      }
-    }, function (err) {
-      logger.error(err);
-      reject(err.toString());
-    });
-  });
-}
-
 async function processParallelPromises(manager, promisesArray) {
   try {
     const settledPromises = await Promise.allSettled(promisesArray);

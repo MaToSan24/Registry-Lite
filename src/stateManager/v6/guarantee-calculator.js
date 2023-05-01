@@ -60,7 +60,7 @@ async function processAllGuarantees(agreement, forceUpdate) {
 }
 
 /**
- * Process a single guarantees.
+ * Process a single guarantee.
  * @param {Object} agreement agreement
  * @param {Object} guaranteeId guarantee ID
  * @param {Object} manager manager
@@ -102,7 +102,6 @@ async function processGuarantee(manager, query, forceUpdate) {
 async function processScopedGuarantee(manager, query, guarantee, ofElement, forceUpdate) {
   const agreement = manager.agreement;
   const slo = ofElement.objective;
-  const penalties = ofElement.penalties;
 
   // Collect the evidences that will be sent to computer
   const evidences = ofElement.evidences.map(evidence => {
@@ -201,8 +200,8 @@ async function processScopedGuarantee(manager, query, guarantee, ofElement, forc
 }
 
 /**
- * Calculate a penalty.
- * @function calculatePenalty
+ * Evaluates a guarantee.
+ * @function evaluateGuarantee
  * @param {Object} agreement agreement
  * @param {Object} guarantee guarantee
  * @param {Object} ofElement of element
@@ -257,6 +256,12 @@ function evaluateGuarantee(guarantee, ofElement, timedScope, metricStates, slo) 
   return guaranteeValue;
 }
 
+/**
+ * Evaluates a SLO.
+ * @function evaluateSLO
+ * @param {Object} slo SLO
+ * @param {Object} metricValues metric values
+ * */
 function evaluateSLO(slo, metricValues) {
   // Substitute metric IDs with their values, join them with ';' and append the SLO.
   const metricExpressions = Object.keys(metricValues).map(metricId => `${metricId}=${metricValues[metricId]}`);

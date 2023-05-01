@@ -25,22 +25,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 'use strict';
 
-const service = require('../../services/v6/GuaranteeService.js');
+import service from '../../services/v6/GuaranteeService.js';
 
 module.exports = {
-    getAllGuarantees,
+    getGuaranteesByAgreementId,
     getGuaranteeById,
 };
 
 /**
- * getAllGuarantees.
+ * getGuaranteesByAgreementId.
  * @param {Object} req request
  * @param {Object} res response
  * @param {Object} next next function
- * @alias module:GuaranteeController.getAllGuarantees
+ * @alias module:GuaranteeController.getGuaranteesByAgreementId
  */
-function getAllGuarantees(req, res, next) {
-    service.getAllGuarantees(req.swagger.params, res, next);
+function getGuaranteesByAgreementId(req, res, next) {
+    service.getGuaranteesByAgreementId(req.swagger.params, res, next);
 }
 
 /**

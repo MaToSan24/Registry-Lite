@@ -131,7 +131,7 @@ function metricQuery(query, metricId, metricDefinition) {
  * @param {Object} guaranteeDefinition Definition of the guarantee
  * @alias module:validators.metricQuery
  * */
-function guaranteeQuery(query, guaranteeId /*, guaranteeDefinition */) {
+function guaranteeQuery(query, guaranteeId) {
   const schema = require('../schemas/query-schema.json');
 
   const schemaValidationResults = schemaValidation(schema, query);

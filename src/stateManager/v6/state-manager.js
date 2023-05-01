@@ -89,10 +89,10 @@ async function get(stateType, query = {}, forceUpdate) {
 
     if (result.length > 0) {
       logger.debug(`There are ${stateType} states for query = ${JSON.stringify(query)} in the database. Refreshing states...`);
-      return await stateManager.update(stateType, query, 0, forceUpdate);
+      return await stateManager.update(stateType, query, forceUpdate);
     } else {
       logger.debug(`There are not ${stateType} states for query = ${JSON.stringify(query)} in the database. Adding states...`);
-      return await stateManager.update(stateType, query, 0, forceUpdate);
+      return await stateManager.update(stateType, query, forceUpdate);
     }
   } catch (error) {
     logger.debug("Error: ", error);
@@ -142,9 +142,8 @@ async function put(stateType, query, value, metadata) {
  * @function update
  * @param {String} stateType enum: {guarantees, agreement, metrics}
  * @param {StateManagerQuery} query query will be matched with an state.
- * @param {Object} logsState logsState
  * */
-async function update(stateType, query, logsState, forceUpdate) {
+async function update(stateType, query, forceUpdate) {
   try {
     const stateManager = this;
     logger.debug(`(UPDATE) Updating state of ${stateType}`);
@@ -168,7 +167,7 @@ async function update(stateType, query, logsState, forceUpdate) {
         return guarantees.map(guarantee => guarantee[0]);
 
       case 'metrics':
-        const metricStates = await processAllMetrics(stateManager.agreement, query.metric, query);
+        const metricStates = await processAllMetrics(stateManager.agreement, query.metric);
 
         const processMetrics = metricStates.metricValues.map(metricValue => {
           const state = { metric: query.metric, scope: metricValue.scope, period: metricValue.period, window: query.window };
